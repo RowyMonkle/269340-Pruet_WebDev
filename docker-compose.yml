@@ -1,0 +1,43 @@
+version: '3.8'
+
+services:
+  postgres_db:
+    image: postgres:15-alpine
+    container_name: ticket_postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: main_db
+      POSTGRES_USER: dev_user
+      POSTGRES_PASSWORD: dev_password
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./init-db:/docker-entrypoint-initdb.d
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U dev_user -d main_db"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  mongo_db:
+    image: mongo:6.0
+    container_name: ticket_mongo
+    restart: unless-stopped
+    environment:
+      MONGO_INITDB_DATABASE: main_db
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongo_data:/data/db
+    healthcheck:
+      test: ["CMD", "mongosh", "--eval", "db.adminCommand('ping')"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  postgres_data:
+    name: ticket_postgres_data
+  mongo_data:
+    name: ticket_mongo_data
