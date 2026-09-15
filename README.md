@@ -6,11 +6,11 @@ A high-performance, production-grade Dual-Database backend API for concert, musi
 
 ## Team Roster (4)
 
-|   StudentID   |          Name          |     Roles
-| **670615022** | *Natthakritta Aoktan*  |  --
-| **670615027** | *Nannapat Chaipoon*    | --
-| **670615029** | *Poonyaporn Intaphrom* | --
-| **670615032** | *Pandara Yutiraksa*    | --
+|   StudentID   |          Name          |     Roles  <br>
+| **670615022** | *Natthakritta Aoktan*  |  --  <br>
+| **670615027** | *Nannapat Chaipoon*    |  --  <br>
+| **670615029** | *Poonyaporn Intaphrom* |  --  <br>
+| **670615032** | *Pandara Yutiraksa*    |  --  <br>
 
 ---
 
