@@ -2,6 +2,8 @@ from datetime import datetime
 from typing import List, Optional
 from pydantic import BaseModel, Field, ConfigDict
 
+from app.schemas.payment import PaymentResponse
+
 
 class TicketItemCreate(BaseModel):
     event_id: str = Field(..., description="MongoDB Event Document ID")
@@ -16,8 +18,8 @@ class TicketItemCreate(BaseModel):
 
 class OrderCreate(BaseModel):
     user_id: int = Field(..., gt=0, description="PostgreSQL User ID")
-    payment_method: str = Field(default="credit_card", description="Payment method: credit_card, promptpay, etc.")
-    items: List[TicketItemCreate] = Field(..., min_length=1, description="List of tickets to purchase")
+    payment_method: str = Field(default="promptpay", description="Payment method: promptpay, credit_card, etc.")
+    items: List[TicketItemCreate] = Field(..., min_length=1, description="List of tickets to reserve/purchase")
 
 
 class TicketResponse(BaseModel):
@@ -41,7 +43,10 @@ class OrderResponse(BaseModel):
     total_amount: float
     status: str
     payment_method: str
+    expires_at: Optional[datetime] = None
+    idempotency_key: Optional[str] = None
     tickets: List[TicketResponse] = []
+    payments: List[PaymentResponse] = []
     created_at: datetime
     updated_at: Optional[datetime] = None
 
