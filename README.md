@@ -6,12 +6,12 @@ A high-performance, production-grade Dual-Database backend API for concert, musi
 
 ## 1. Team Roster (4)
 
-| Student ID | Full Name | Role 
-| :--- | :--- | :--- | :--- |
-| **670615022** | Natthakritta Aoktan | Backend Lead & Database Architecture 
-| **670615027** | Nannapat Chaipoon | API Engineering & Request Validation 
-| **670615029** | Poonyaporn Intaphrom | Data Engineering & Project Management
-| **670615032** | Pandara Yutiraksa | System Documentation & Frontend design
+| Student ID | Full Name | Role |
+| :--- | :--- | :--- |
+| **670615022** | Natthakritta Aoktan | Backend Lead & Database Architecture |
+| **670615027** | Nannapat Chaipoon | API Engineering & Request Validation |
+| **670615029** | Poonyaporn Intaphrom | Data Engineering & Project Management |
+| **670615032** | Pandara Yutiraksa | System Documentation & Frontend design |
 
 ---
 
@@ -42,25 +42,25 @@ A high-performance, production-grade Dual-Database backend API for concert, musi
 
 ```mermaid
 graph TD
-    Client["Client Browser / Mobile App / API Consumer"] -->|HTTP / RESTful JSON| FastAPI["FastAPI Backend Tier (Port 8000)"]
+    Client["Client Browser / Mobile App / API Consumer"] -->|"HTTP / RESTful JSON"| FastAPI["FastAPI Backend Tier (Port 8000)"]
     
     subgraph Relational_Boundary ["PostgreSQL 15 (Port 5432) - Transactional Core State"]
-        Users["users Table<br/>(Accounts, Auth, Roles)"]
-        Orders["orders Table<br/>(Billing, Status, Payment)"]
-        Tickets["tickets Table<br/>(Seat Allocation, QR Codes)"]
+        Users["users Table (Accounts, Auth, Roles)"]
+        Orders["orders Table (Billing, Status, Payment)"]
+        Tickets["tickets Table (Seat Allocation, QR Codes)"]
         
-        Users -->|1 : N| Orders
-        Orders -->|1 : N (Cascade)| Tickets
+        Users -->|"1 : N"| Orders
+        Orders -->|"1 : N (Cascade)"| Tickets
     end
 
     subgraph Document_Boundary ["MongoDB 6.0 (Port 27017) - Catalog & Unstructured"]
-        Events["events Collection<br/>(Dynamic Stage Layouts, Artist Info, Tags)"]
-        ActivityLogs["activity_logs Collection<br/>(High-Volume Telemetry & Auditing)"]
+        Events["events Collection (Dynamic Stage Layouts, Artist Info, Tags)"]
+        ActivityLogs["activity_logs Collection (High-Volume Telemetry & Auditing)"]
     end
 
-    FastAPI -->|SQLAlchemy 2.0 Pool| Relational_Boundary
-    FastAPI -->|PyMongo Connection Pool| Document_Boundary
-    Tickets -.->|Cross-DB Reference: event_id| Events
+    FastAPI -->|"SQLAlchemy 2.0 Pool"| Users
+    FastAPI -->|"PyMongo Connection Pool"| Events
+    Tickets -.->|"Cross-DB Reference: event_id"| Events
 ```
 
 ### Domain Boundary Separation:
