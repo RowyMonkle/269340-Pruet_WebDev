@@ -90,13 +90,17 @@ cd 269340-Pruet_WebDev
 cp .env.example .env
 ```
 
-### Step 2: Launch Databases with Docker Compose
-Start PostgreSQL (5432) and MongoDB (27017) containers with persistent volumes:
+### Step 2: Launch Services with Docker Compose
+
+**Option A: Launch Database Containers Only (Local Python Development)**
 ```bash
-docker compose up -d
+docker compose up -d postgres_db mongo_db
+docker compose ps
 ```
-Verify container health:
+
+**Option B: Full-Stack Container Orchestration (API + Databases)**
 ```bash
+docker compose up --build -d
 docker compose ps
 ```
 
@@ -124,22 +128,27 @@ alembic stamp head
 ```
 *(For future zero-downtime schema evolution using the Expand-and-Contract pattern, create migrations via `alembic revision -m "..."` and apply them with `alembic upgrade head`).*
 
-### Step 6: Seed Over 1,000 Dummy Records
+### Step 6: Seed Over 2,800 Realistic Records
 Execute the automated database seeder to pre-populate realistic mock data in **both** databases:
 ```bash
 python seed.py
 ```
 **Output Summary:**
-- **PostgreSQL**: ~2,000 records (250 Users, 500 Orders with matched ticket sums, ~1,250 Tickets).
+- **PostgreSQL**: ~2,875 records (250 Users, 500 Orders, ~1,250 Tickets, ~375 Payments, ~500 OutboxEvents).
 - **MongoDB**: ~1,400 documents (200 Events with stage zones, 1,200 ActivityLogs referencing valid user IDs).
 
-### Step 7: Run FastAPI Server
+### Step 7: Run FastAPI Server (If running locally)
 ```bash
 uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
 ```
 - Interactive Swagger UI: [http://localhost:8000/docs](http://localhost:8000/docs)
 - Interactive ReDoc: [http://localhost:8000/redoc](http://localhost:8000/redoc)
 - Health Check: [http://localhost:8000/health](http://localhost:8000/health)
+
+### Step 8: Run Concurrency & Stress Tests
+```bash
+pytest tests/test_concurrency.py -v
+```
 
 ---
 
@@ -156,18 +165,33 @@ uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
 | `GET` | `/api/v1/events/{id}` | MongoDB | `200`, `404` | Fetch single event document by its ObjectId |
 | `GET` | `/api/v1/products` | MongoDB | `200` | Catalog alias for /events |
 | `POST` | `/api/v1/products` | MongoDB | `201` | Catalog alias for /events |
-| `POST` | `/api/v1/orders` | Dual-DB | `201`, `400`, `409` | Atomic checkout: enforces Mongo zone price, checks capacity, prevents double-booking |
-| `GET` | `/api/v1/orders/{id}`| PostgreSQL | `200`, `404` | Fetch order details with associated tickets (joinedload) |
+| `POST` | `/api/v1/orders` | Dual-DB | `201`, `400`, `409` | Atomic checkout with 10-min seat hold, `Idempotency-Key` header support |
+| `GET` | `/api/v1/orders/{id}`| PostgreSQL | `200`, `404` | Fetch order details with associated tickets and payments (joinedload) |
+| `POST` | `/api/v1/orders/{id}/payments` | PostgreSQL | `201`, `400` | Process payment, confirm order, activate tickets (`held` $\rightarrow$ `valid`) |
+| `GET` | `/api/v1/orders/{id}/payments` | PostgreSQL | `200`, `404` | List payment transaction attempts for an order |
+| `POST` | `/api/v1/orders/cleanup-expired` | Dual-DB | `200` | Reconcile and release expired seat holds back to MongoDB |
 
 ---
 
-## 5. Architectural Directives
+## 5. Architectural Directives & Patterns
 
-### 1. Database Projections & Eliminating N+1 Bottlenecks
+### 1. Seat Holds & Expiry State Machine
+Orders follow an industry-standard state machine:
+$$\text{Pending (Held)} \xrightarrow{\text{Payment Complete}} \text{Confirmed (Valid)} \quad \Big| \quad \text{Pending (Held)} \xrightarrow{\text{10 min Timeout}} \text{Expired (Released)}$$
+- During the 10-minute hold window, tickets are marked `held`.
+- The PostgreSQL partial unique index `uq_tickets_event_zone_seat` protects seats in both `held` and `valid` states from double-booking.
+- Background reconciliation automatically releases expired seats back to the MongoDB event capacity.
+
+### 2. Transactional Outbox Pattern (Dual-DB Consistency)
+To guarantee eventual consistency across PostgreSQL and MongoDB:
+- Every state change writes an atomic event (`SEAT_HELD`, `ORDER_PAID`, `SEAT_HOLD_EXPIRED`) into the PostgreSQL `outbox_events` table within the same database transaction.
+- An asynchronous worker processes outbox records to update MongoDB, ensuring network failures or crashes never leave the databases permanently out of sync.
+
+### 3. Database Projections & Eliminating N+1 Bottlenecks
 - **SQLAlchemy (PostgreSQL)**: All entity queries utilize `.options(load_only(...))` including `updated_at` so heavy or sensitive columns (e.g. `hashed_password`) are never loaded into memory, and no secondary lazy-load queries are triggered. Related ticket collections use `joinedload` to prevent N+1 query loops.
 - **PyMongo (MongoDB)**: All collection queries use projection dictionaries (e.g. `{"_id": 1, "title": 1, "zones": 1, ...}`) to eliminate document over-fetching over the wire.
 
-### 2. Zero-Downtime Schema Evolution (Expand and Contract Pattern)
+### 4. Zero-Downtime Schema Evolution (Expand and Contract Pattern)
 All database schema alterations avoid table-locking operations:
 1. **Expand**: Add new columns with `nullable=True` or safe default values alongside legacy fields.
 2. **Dual Write**: API writes to both legacy and new schema versions concurrently.
@@ -175,6 +199,6 @@ All database schema alterations avoid table-locking operations:
 4. **Switch Read**: Read traffic shifts from old columns to new columns.
 5. **Contract**: Safely drop deprecated columns only after previous application versions are fully decommissioned.
 
-### 3. Git Hygiene & Security
+### 5. Git Hygiene & Security
 - Strict `.gitignore` prevents tracking virtual environments (`.venv`), `.env` configuration files, database files (`*.db`, `*.sqlite`), and credentials.
 - Pure ORM queries and parameterized SQL prevent SQL Injection vulnerabilities.
