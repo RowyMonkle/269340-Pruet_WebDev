@@ -1,4 +1,5 @@
 import json
+import logging
 import uuid
 from datetime import datetime, timedelta, timezone
 from decimal import Decimal
@@ -12,6 +13,8 @@ from pymongo.database import Database
 
 from app.models.sql_models import User, Order, Ticket, OutboxEvent
 from app.schemas.order import OrderCreate
+
+logger = logging.getLogger("order_service")
 
 
 def get_order_by_id(db: Session, order_id: int) -> Order:
@@ -39,14 +42,14 @@ def create_order_dual_db(
     """Execute Dual-Database Transaction for ticket seat-holding and checkout.
 
     Orchestration:
-    1. Check Idempotency-Key: if key already exists, return previous order without re-charging/duplicating.
+    1. Check Idempotency-Key: if key already exists, verify payload fingerprint. If payload differs, return 409.
+       If identical, return previous order without re-charging or duplicating seats.
     2. Verify customer account in PostgreSQL.
     3. Verify event and zone in MongoDB, extract authoritative price.
-    4. Atomically reserve seat capacity in MongoDB using $elemMatch and $lt capacity condition (prevents overselling).
+    4. Atomically reserve seat capacity in MongoDB using $elemMatch and $lt capacity condition.
     5. Start PostgreSQL transaction: persist Order with 10-minute hold expiry and Tickets with 'held' status.
-    6. Catch double-booking violations via partial unique index on (event_id, seat_zone, seat_number).
+    6. Catch concurrent idempotency races and double-booking violations.
     7. Record SEAT_HELD in OutboxEvent table for cross-DB consistency.
-    8. Roll back and execute compensating transactions if any step fails.
     """
     # 1. Idempotency Check
     if idempotency_key:
@@ -57,6 +60,19 @@ def create_order_dual_db(
             .first()
         )
         if existing_order:
+            # Validate payload fingerprint: same user and matching ticket items
+            if existing_order.user_id != order_in.user_id or len(existing_order.tickets) != len(order_in.items):
+                raise HTTPException(
+                    status_code=status.HTTP_409_CONFLICT,
+                    detail="Idempotency key reused with different request payload (user or item count mismatch).",
+                )
+            existing_items_sig = sorted([(t.event_id, t.seat_zone) for t in existing_order.tickets])
+            request_items_sig = sorted([(item.event_id, item.seat_zone) for item in order_in.items])
+            if existing_items_sig != request_items_sig:
+                raise HTTPException(
+                    status_code=status.HTTP_409_CONFLICT,
+                    detail="Idempotency key reused with different ticket items or zones.",
+                )
             return existing_order
 
     # 2. Verify User exists in PostgreSQL (load only id for performance)
@@ -213,9 +229,9 @@ def create_order_dual_db(
         db.commit()
         db.refresh(new_order)
 
-    except IntegrityError:
-        # Enforces double-booking prevention: duplicate (event_id, seat_zone, seat_number)
+    except IntegrityError as iexc:
         db.rollback()
+        # Compensate MongoDB reserved seats
         for ev_oid, z_name in mongo_reserved_zones:
             try:
                 events_collection.update_one(
@@ -224,6 +240,21 @@ def create_order_dual_db(
                 )
             except Exception:
                 pass
+
+        err_str = str(iexc).lower()
+
+        # If concurrent duplicate idempotency key raced, return winning order
+        if idempotency_key and ("idempotency_key" in err_str or "uq_orders_idempotency_key" in err_str):
+            winning_order = (
+                db.query(Order)
+                .options(joinedload(Order.tickets), joinedload(Order.payments))
+                .filter(Order.idempotency_key == idempotency_key)
+                .first()
+            )
+            if winning_order:
+                return winning_order
+
+        # Otherwise it was a double-booking seat violation
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail="Double-booking prevented: One or more selected seats have already been reserved for this event.",
@@ -273,28 +304,31 @@ def create_order_dual_db(
 def cleanup_expired_seat_holds(db: Session, mongo_db: Database) -> int:
     """Find all expired pending orders and release their held seats in MongoDB.
 
-    Cross-DB reconciliation job ensuring held seats never stay locked forever.
+    Cross-DB Reconciliation with Drift Protection:
+    - Uses with_for_update(skip_locked=True) to avoid conflicting with orders actively being paid.
+    - Commits PostgreSQL status updates FIRST.
+    - Releases MongoDB capacity ONLY with booked_count > 0 guard, logging any failures.
     """
     now = datetime.now(timezone.utc)
     expired_orders = (
         db.query(Order)
         .options(joinedload(Order.tickets))
         .filter(Order.status == "pending", Order.expires_at < now)
+        .with_for_update(skip_locked=True)
         .all()
     )
 
+    if not expired_orders:
+        return 0
+
+    to_release = []
     cleaned_count = 0
+
     for order in expired_orders:
         order.status = "expired"
         for ticket in order.tickets:
             ticket.status = "cancelled"
-            try:
-                mongo_db["events"].update_one(
-                    {"_id": ObjectId(ticket.event_id), "zones.name": ticket.seat_zone},
-                    {"$inc": {"zones.$.booked_count": -1}},
-                )
-            except Exception:
-                pass
+            to_release.append((ticket.event_id, ticket.seat_zone))
 
         outbox = OutboxEvent(
             event_type="SEAT_HOLD_EXPIRED",
@@ -305,7 +339,25 @@ def cleanup_expired_seat_holds(db: Session, mongo_db: Database) -> int:
         db.add(outbox)
         cleaned_count += 1
 
-    if cleaned_count > 0:
-        db.commit()
+    # 1. Commit PostgreSQL transaction FIRST to ensure consistency
+    db.commit()
+
+    # 2. Release seats in MongoDB with booked_count > 0 guard
+    for ev_id, z_name in to_release:
+        try:
+            mongo_db["events"].update_one(
+                {
+                    "_id": ObjectId(ev_id),
+                    "zones": {
+                        "$elemMatch": {
+                            "name": z_name,
+                            "booked_count": {"$gt": 0},
+                        }
+                    },
+                },
+                {"$inc": {"zones.$.booked_count": -1}},
+            )
+        except Exception as exc:
+            logger.error(f"Failed to release seat in MongoDB for event {ev_id} zone {z_name}: {exc}")
 
     return cleaned_count

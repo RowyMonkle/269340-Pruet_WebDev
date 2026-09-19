@@ -1,4 +1,4 @@
-from typing import List
+from typing import List, Optional
 from fastapi import APIRouter, Depends, Header, Path, status
 from sqlalchemy.orm import Session
 from pymongo.database import Database
@@ -22,7 +22,8 @@ router = APIRouter(prefix="/orders", tags=["Payments & Checkout (Relational Bill
     description=(
         "Processes payment for an order currently holding seats. "
         "Transitions order from 'pending' to 'confirmed', validates hold expiry, "
-        "and activates held tickets to 'valid'."
+        "and activates held tickets to 'valid'. "
+        "Returns HTTP 410 Gone if the seat hold has expired."
     ),
 )
 def pay_for_order(
@@ -56,14 +57,19 @@ def list_order_payments(
 @router.post(
     "/cleanup-expired",
     status_code=status.HTTP_200_OK,
-    summary="Reconcile & Clean Expired Seat Holds",
+    summary="Reconcile & Clean Expired Seat Holds (Internal / Cron)",
     description=(
-        "Reconciliation endpoint for background cron or worker. "
+        "Internal reconciliation endpoint for background cron or worker. "
         "Finds all pending orders whose 10-minute hold window expired, "
         "cancels tickets, and atomically releases held seats back to MongoDB."
     ),
 )
 def trigger_cleanup_expired_holds(
+    x_cron_secret: Optional[str] = Header(
+        None,
+        alias="X-Cron-Secret",
+        description="Optional internal secret for cron/worker authentication",
+    ),
     db: Session = Depends(get_db),
     mongo_db: Database = Depends(get_mongo_db),
 ):

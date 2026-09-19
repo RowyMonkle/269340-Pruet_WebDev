@@ -1,3 +1,4 @@
+import asyncio
 import logging
 from contextlib import asynccontextmanager
 from fastapi import FastAPI, Request, status
@@ -13,8 +14,9 @@ from app.core.database import (
     check_postgres_connection,
     check_mongo_connection,
 )
-from app.models.sql_models import User, Order, Ticket  # Registers models on Base.metadata
+from app.models.sql_models import User, Order, Ticket, Payment, OutboxEvent  # Registers models on Base.metadata
 from app.models.nosql_models import init_mongo_indexes
+from app.services.outbox_worker import start_outbox_and_cleanup_worker
 from app.api.v1 import api_v1_router
 
 logging.basicConfig(
@@ -45,9 +47,21 @@ async def lifespan(app: FastAPI):
     else:
         logger.warning("MongoDB is not reachable at startup. Continuing (will retry on requests)...")
 
+    # Start background Outbox & Seat-Hold Reconciliation Worker
+    stop_event = asyncio.Event()
+    worker_task = asyncio.create_task(
+        start_outbox_and_cleanup_worker(stop_event=stop_event, poll_interval=15)
+    )
+
     yield
 
-    logger.info("Shutting down Ticket Booking Platform backend...")
+    logger.info("Shutting down background workers and Ticket Booking Platform backend...")
+    stop_event.set()
+    try:
+        await asyncio.wait_for(worker_task, timeout=5.0)
+    except (asyncio.TimeoutError, asyncio.CancelledError):
+        pass
+    logger.info("Backend shutdown complete.")
 
 
 app = FastAPI(
@@ -55,7 +69,7 @@ app = FastAPI(
     version="1.0.0",
     description=(
         "Dual-Database Backend API for Concert & Festival Ticket Booking. "
-        "Integrates PostgreSQL for transactional core state (Users, Orders, Tickets) "
+        "Integrates PostgreSQL for transactional core state (Users, Orders, Tickets, Payments, Outbox) "
         "and MongoDB for flexible documents (Events, ActivityLogs)."
     ),
     lifespan=lifespan,

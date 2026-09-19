@@ -1,4 +1,5 @@
 import json
+import logging
 import uuid
 from datetime import datetime, timezone
 from decimal import Decimal
@@ -8,8 +9,10 @@ from fastapi import HTTPException, status
 from sqlalchemy.orm import Session, joinedload
 from pymongo.database import Database
 
-from app.models.sql_models import Order, Ticket, Payment, OutboxEvent
+from app.models.sql_models import Order, Payment, OutboxEvent
 from app.schemas.payment import PaymentCreate
+
+logger = logging.getLogger("payment_service")
 
 
 def process_order_payment(
@@ -20,18 +23,24 @@ def process_order_payment(
 ) -> Payment:
     """Process payment for an existing pending order.
 
-    State Machine Transitions:
-    - pending (held) -> paid / confirmed -> tickets become 'valid'.
-    - If seat hold has expired (expires_at < now):
-      - order -> 'expired'
-      - tickets -> 'cancelled'
-      - seats released in MongoDB
-      - raises HTTP 400/410 Bad Request.
+    Concurrency & Race Prevention:
+    - Row-level lock via .with_for_update() prevents double-payments and races with cleanup.
+    - If hold expired (expires_at < now):
+      - Postgres commit happens FIRST (order -> expired, tickets -> cancelled).
+      - Mongo seat count decremented only with {"booked_count": {"$gt": 0}} guard.
+      - Returns HTTP 410 Gone.
+    - If valid:
+      - payment -> completed.
+      - order -> confirmed.
+      - tickets -> valid.
+      - Transactional outbox event recorded.
     """
+    # Acquire pessimistic row-level lock on the order
     order = (
         db.query(Order)
         .options(joinedload(Order.tickets), joinedload(Order.payments))
         .filter(Order.id == order_id)
+        .with_for_update()  # Crucial: prevents concurrent payments and races with cleanup
         .first()
     )
     if not order:
@@ -56,17 +65,11 @@ def process_order_payment(
 
     # Check seat hold expiry (10-minute hold window)
     if order.expires_at and order.expires_at < now:
-        # Mark order expired and release held seats in MongoDB
         order.status = "expired"
+        to_release = []
         for ticket in order.tickets:
             ticket.status = "cancelled"
-            try:
-                mongo_db["events"].update_one(
-                    {"_id": ObjectId(ticket.event_id), "zones.name": ticket.seat_zone},
-                    {"$inc": {"zones.$.booked_count": -1}},
-                )
-            except Exception:
-                pass
+            to_release.append((ticket.event_id, ticket.seat_zone))
 
         # Record outbox event for seat release
         outbox = OutboxEvent(
@@ -76,10 +79,31 @@ def process_order_payment(
             status="pending",
         )
         db.add(outbox)
+
+        # Commit PostgreSQL state FIRST before altering MongoDB
         db.commit()
 
+        # Release held seats in MongoDB with > 0 guard
+        for ev_id, z_name in to_release:
+            try:
+                mongo_db["events"].update_one(
+                    {
+                        "_id": ObjectId(ev_id),
+                        "zones": {
+                            "$elemMatch": {
+                                "name": z_name,
+                                "booked_count": {"$gt": 0},
+                            }
+                        },
+                    },
+                    {"$inc": {"zones.$.booked_count": -1}},
+                )
+            except Exception as exc:
+                logger.error(f"Failed to decrement MongoDB booked_count on expiry for event {ev_id} zone {z_name}: {exc}")
+
+        # Return HTTP 410 Gone for expired seat holds
         raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
+            status_code=status.HTTP_410_GONE,
             detail="Seat hold has expired (10-minute limit exceeded). The seats have been released back to the event catalog.",
         )
 
