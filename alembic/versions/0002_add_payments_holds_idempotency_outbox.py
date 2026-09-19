@@ -30,7 +30,7 @@ def upgrade() -> None:
     op.create_index('idx_orders_status_expires', 'orders', ['status', 'expires_at'])
 
     # 2. Update tickets double-booking partial unique index to guard both 'held' and 'valid' tickets
-    op.drop_index('uq_tickets_event_zone_seat', table_name='tickets')
+    op.execute("DROP INDEX IF EXISTS uq_tickets_event_zone_seat")
     op.create_index(
         'uq_tickets_event_zone_seat',
         'tickets',

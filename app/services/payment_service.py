@@ -6,7 +6,7 @@ from decimal import Decimal
 from typing import List
 from bson import ObjectId
 from fastapi import HTTPException, status
-from sqlalchemy.orm import Session, joinedload
+from sqlalchemy.orm import Session, joinedload, selectinload
 from pymongo.database import Database
 
 from app.models.sql_models import Order, Payment, OutboxEvent
@@ -38,9 +38,9 @@ def process_order_payment(
     # Acquire pessimistic row-level lock on the order
     order = (
         db.query(Order)
-        .options(joinedload(Order.tickets), joinedload(Order.payments))
+        .options(selectinload(Order.tickets), selectinload(Order.payments))
         .filter(Order.id == order_id)
-        .with_for_update()  # Crucial: prevents concurrent payments and races with cleanup
+        .with_for_update(of=Order)
         .first()
     )
     if not order:

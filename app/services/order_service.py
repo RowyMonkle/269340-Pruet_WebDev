@@ -8,7 +8,7 @@ from bson import ObjectId
 from bson.errors import InvalidId
 from fastapi import HTTPException, status
 from sqlalchemy.exc import IntegrityError
-from sqlalchemy.orm import Session, joinedload, load_only
+from sqlalchemy.orm import Session, joinedload, load_only, selectinload
 from pymongo.database import Database
 
 from app.models.sql_models import User, Order, Ticket, OutboxEvent
@@ -312,9 +312,9 @@ def cleanup_expired_seat_holds(db: Session, mongo_db: Database) -> int:
     now = datetime.now(timezone.utc)
     expired_orders = (
         db.query(Order)
-        .options(joinedload(Order.tickets))
+        .options(selectinload(Order.tickets))
         .filter(Order.status == "pending", Order.expires_at < now)
-        .with_for_update(skip_locked=True)
+        .with_for_update(of=Order, skip_locked=True)
         .all()
     )
 
