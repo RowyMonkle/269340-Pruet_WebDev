@@ -1,0 +1,36 @@
+# Git
+.git
+.gitignore
+
+# Environments & Virtual Envs
+.env
+.env.local
+.env.*.local
+.venv
+env/
+venv/
+
+# Byte-compiled files & caches
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Local databases & persistent volumes
+*.db
+*.sqlite
+*.sqlite3
+postgres_data/
+mongo_data/
+
+# IDE & OS
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+logs/

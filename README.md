@@ -98,13 +98,27 @@ docker compose up -d postgres_db mongo_db
 docker compose ps
 ```
 
-**Option B: Full-Stack Container Orchestration (API + Databases)**
+**Option B: Full-Stack Container Orchestration (API + Databases, Zero Local Python Needed)**
 ```bash
+# 1. Build and start all services
 docker compose up --build -d
 docker compose ps
+
+# 2. Stamp initial Alembic baseline inside the running container
+docker compose exec api alembic stamp head
+
+# 3. Seed over 2,800 realistic records inside the container
+docker compose exec api python seed.py
+
+# 4. Run automated concurrency test suite inside container
+docker compose exec api pytest tests/test_concurrency.py -v
 ```
 
-### Step 3: Set Up Python Virtual Environment
+---
+
+### Alternative: Local Python Development Workflow (Option A)
+
+#### Step 3: Set Up Python Virtual Environment
 ```bash
 # Create and activate virtual environment
 python -m venv .venv
@@ -116,28 +130,28 @@ source .venv/bin/activate
 .venv\Scripts\Activate.ps1
 ```
 
-### Step 4: Install Dependencies
+#### Step 4: Install Dependencies
 ```bash
 pip install -r requirements.txt
 ```
 
-### Step 5: Mark Baseline Database Migration
+#### Step 5: Mark Baseline Database Migration
 Since Docker automatically initializes the PostgreSQL schema via `init-db/init.sql` upon container startup, stamp the baseline version in Alembic:
 ```bash
 alembic stamp head
 ```
 *(For future zero-downtime schema evolution using the Expand-and-Contract pattern, create migrations via `alembic revision -m "..."` and apply them with `alembic upgrade head`).*
 
-### Step 6: Seed Over 2,800 Realistic Records
+#### Step 6: Seed Over 2,800 Realistic Records
 Execute the automated database seeder to pre-populate realistic mock data in **both** databases:
 ```bash
 python seed.py
 ```
-**Output Summary:**
-- **PostgreSQL**: ~2,875 records (250 Users, 500 Orders, ~1,250 Tickets, ~375 Payments, ~500 OutboxEvents).
+**Output Summary (Verified Seed Run):**
+- **PostgreSQL**: ~2,875 records (250 Users, 500 Orders with matched ticket sums, ~1,250 Tickets, ~375 Payments, ~500 OutboxEvents).
 - **MongoDB**: ~1,400 documents (200 Events with stage zones, 1,200 ActivityLogs referencing valid user IDs).
 
-### Step 7: Run FastAPI Server (If running locally)
+#### Step 7: Run FastAPI Server (Local Development)
 ```bash
 uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
 ```
@@ -145,10 +159,17 @@ uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
 - Interactive ReDoc: [http://localhost:8000/redoc](http://localhost:8000/redoc)
 - Health Check: [http://localhost:8000/health](http://localhost:8000/health)
 
-### Step 8: Run Concurrency & Stress Tests
+#### Step 8: Run Concurrency & Stress Tests
 ```bash
 pytest tests/test_concurrency.py -v
 ```
+**Automated Test Scenarios Covered:**
+1. `test_oversell_concurrency_protection`: 50 concurrent threads competing for 1 available seat. Exactly 1 order succeeds (`201`), and 49 are rejected (`409 Conflict`).
+2. `test_same_seat_concurrency_protection`: 2 parallel requests trying to claim the exact same seat number. PostgreSQL partial unique index prevents double-booking (`409 Conflict`).
+3. `test_idempotency_order_placement`: Repeated requests with identical `Idempotency-Key` return original order without double-booking or duplicate payments.
+4. `test_idempotency_payload_mismatch`: Replaying an existing `Idempotency-Key` with altered payload parameters returns `409 Conflict`.
+5. `test_paying_twice_fails_with_400`: First payment confirms order. Second payment attempt returns `400 Bad Request`.
+6. `test_expiry_then_pay_fails_with_410`: Paying for an expired seat hold releases seats back to MongoDB and returns `410 Gone`.
 
 ---
 
