@@ -1,6 +1,7 @@
 import logging
 from contextlib import asynccontextmanager
-from fastapi import FastAPI, status
+from fastapi import FastAPI, Request, status
+from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
@@ -28,14 +29,13 @@ async def lifespan(app: FastAPI):
     """Application lifespan context for startup and shutdown routines."""
     logger.info("Initializing Ticket Booking Platform backend...")
 
-    # Verify PostgreSQL and initialize tables
+    # Verify PostgreSQL connectivity
     if check_postgres_connection():
-        logger.info("PostgreSQL connection established successfully. Creating tables if missing...")
-        Base.metadata.create_all(bind=engine)
+        logger.info("PostgreSQL connection established successfully.")
     else:
         logger.warning("PostgreSQL is not reachable at startup. Continuing (will retry on requests)...")
 
-    # Verify MongoDB and initialize collection indexes
+    # Verify MongoDB connectivity and initialize collection indexes
     if check_mongo_connection():
         logger.info("MongoDB connection established successfully. Creating collection indexes...")
         try:
@@ -62,6 +62,28 @@ app = FastAPI(
     docs_url="/docs",
     redoc_url="/redoc",
 )
+
+# Standardized 400 Bad Request exception handler for Pydantic validation errors
+@app.exception_handler(RequestValidationError)
+async def validation_exception_handler(request: Request, exc: RequestValidationError):
+    """Standardized validation error handler returning HTTP 400 instead of default 422."""
+    formatted_errors = []
+    for err in exc.errors():
+        field_path = " -> ".join(str(loc) for loc in err.get("loc", []))
+        formatted_errors.append({
+            "field": field_path,
+            "message": err.get("msg", "Invalid input"),
+            "type": err.get("type", "value_error"),
+        })
+    return JSONResponse(
+        status_code=status.HTTP_400_BAD_REQUEST,
+        content={
+            "error": "Bad Request",
+            "message": "Input validation failed for request payload",
+            "details": formatted_errors,
+        },
+    )
+
 
 # Cross-Origin Resource Sharing (CORS)
 app.add_middleware(

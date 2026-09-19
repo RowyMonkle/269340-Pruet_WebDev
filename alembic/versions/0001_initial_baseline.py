@@ -36,9 +36,9 @@ def upgrade() -> None:
         sa.Column('created_at', sa.DateTime(timezone=True), server_default=sa.text('now()'), nullable=False),
         sa.Column('updated_at', sa.DateTime(timezone=True), server_default=sa.text('now()'), nullable=False),
         sa.PrimaryKeyConstraint('id'),
+        sa.UniqueConstraint('email'),
+        sa.UniqueConstraint('username'),
     )
-    op.create_index('idx_users_email', 'users', ['email'], unique=True)
-    op.create_index('idx_users_username', 'users', ['username'], unique=True)
     op.create_index('idx_users_created_at', 'users', [sa.text('created_at DESC')])
 
     # 2. Orders Table
@@ -54,9 +54,9 @@ def upgrade() -> None:
         sa.Column('updated_at', sa.DateTime(timezone=True), server_default=sa.text('now()'), nullable=False),
         sa.ForeignKeyConstraint(['user_id'], ['users.id'], ondelete='RESTRICT'),
         sa.PrimaryKeyConstraint('id'),
+        sa.UniqueConstraint('order_number'),
         sa.CheckConstraint('total_amount >= 0', name='chk_order_total_amount_positive'),
     )
-    op.create_index('idx_orders_order_number', 'orders', ['order_number'], unique=True)
     op.create_index('idx_orders_user_id', 'orders', ['user_id'])
     op.create_index('idx_orders_status', 'orders', ['status'])
     op.create_index('idx_orders_created_at', 'orders', [sa.text('created_at DESC')])
@@ -76,15 +76,25 @@ def upgrade() -> None:
         sa.Column('created_at', sa.DateTime(timezone=True), server_default=sa.text('now()'), nullable=False),
         sa.ForeignKeyConstraint(['order_id'], ['orders.id'], ondelete='CASCADE'),
         sa.PrimaryKeyConstraint('id'),
+        sa.UniqueConstraint('ticket_code'),
         sa.CheckConstraint('price >= 0', name='chk_ticket_price_positive'),
     )
-    op.create_index('idx_tickets_ticket_code', 'tickets', ['ticket_code'], unique=True)
     op.create_index('idx_tickets_order_id', 'tickets', ['order_id'])
     op.create_index('idx_tickets_event_id', 'tickets', ['event_id'])
     op.create_index('idx_tickets_event_zone', 'tickets', ['event_id', 'seat_zone'])
 
+    # Partial unique index: prevent double-booking for valid tickets with assigned seats
+    op.create_index(
+        'uq_tickets_event_zone_seat',
+        'tickets',
+        ['event_id', 'seat_zone', 'seat_number'],
+        unique=True,
+        postgresql_where=sa.text("seat_number IS NOT NULL AND status = 'valid'"),
+    )
+
 
 def downgrade() -> None:
+    op.drop_index('uq_tickets_event_zone_seat', table_name='tickets')
     op.drop_table('tickets')
     op.drop_table('orders')
     op.drop_table('users')

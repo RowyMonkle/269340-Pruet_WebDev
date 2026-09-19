@@ -5,9 +5,13 @@ from pydantic import BaseModel, Field, ConfigDict
 
 class TicketItemCreate(BaseModel):
     event_id: str = Field(..., description="MongoDB Event Document ID")
-    seat_zone: str = Field(..., min_length=1, max_length=50, description="Target zone e.g. VIP, GA")
-    seat_number: Optional[str] = Field(None, max_length=50, description="Optional seat number")
-    price: float = Field(..., ge=0.0, description="Ticket unit price")
+    seat_zone: str = Field(..., min_length=1, max_length=50, description="Target zone e.g. VIP Standing, Front Zone A")
+    seat_number: Optional[str] = Field(None, max_length=50, description="Optional seat number (e.g. VIP-12)")
+    price: Optional[float] = Field(
+        None,
+        ge=0.0,
+        description="Optional client price (server enforces authoritative MongoDB zone price to prevent tampering)",
+    )
 
 
 class OrderCreate(BaseModel):

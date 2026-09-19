@@ -4,15 +4,64 @@ A high-performance, production-grade Dual-Database backend API for concert, musi
 
 ---
 
-## Team Roster (4)
+## 1. Team Roster (4)
 
-|   StudentID   |          Name          |     Roles  <br>
-| **670615022** | *Natthakritta Aoktan*  |  --  <br>
-| **670615027** | *Nannapat Chaipoon*    |  --  <br>
-| **670615029** | *Poonyaporn Intaphrom* |  --  <br>
-| **670615032** | *Pandara Yutiraksa*    |  --  <br>
+| Student ID | Full Name | Role 
+| :--- | :--- | :--- | :--- |
+| **670615022** | Natthakritta Aoktan | Backend Lead & Database Architecture 
+| **670615027** | Nannapat Chaipoon | API Engineering & Request Validation 
+| **670615029** | Poonyaporn Intaphrom | Data Engineering & Project Management
+| **670615032** | Pandara Yutiraksa | System Documentation & Frontend design
 
 ---
+
+## 2. System Architecture Diagram
+
+```
+ ┌────────────────┐
+ │ Client Browser │
+ └───────┬────────┘
+         │ (HTTP / JSON API)
+         ▼
+ ┌────────────────┐
+ │  Web API Tier  │
+ │ (C# / Python)  │
+ └────┬──────┬────┘
+      │      │ 
+(Relational) │ (Document)
+ ┌────┘      └────┐
+ ▼                ▼
+┌──────────────┐ ┌──────────────┐
+│  PostgreSQL  │ │   MongoDB    │
+│(Transactional│ │  (Catalog/   │
+│ Core State)  │ │Unstructured) │
+└──────────────┘ └──────────────┘
+```
+
+### Detailed Component Architecture
+
+```mermaid
+graph TD
+    Client["Client Browser / Mobile App / API Consumer"] -->|HTTP / RESTful JSON| FastAPI["FastAPI Backend Tier (Port 8000)"]
+    
+    subgraph Relational_Boundary ["PostgreSQL 15 (Port 5432) - Transactional Core State"]
+        Users["users Table<br/>(Accounts, Auth, Roles)"]
+        Orders["orders Table<br/>(Billing, Status, Payment)"]
+        Tickets["tickets Table<br/>(Seat Allocation, QR Codes)"]
+        
+        Users -->|1 : N| Orders
+        Orders -->|1 : N (Cascade)| Tickets
+    end
+
+    subgraph Document_Boundary ["MongoDB 6.0 (Port 27017) - Catalog & Unstructured"]
+        Events["events Collection<br/>(Dynamic Stage Layouts, Artist Info, Tags)"]
+        ActivityLogs["activity_logs Collection<br/>(High-Volume Telemetry & Auditing)"]
+    end
+
+    FastAPI -->|SQLAlchemy 2.0 Pool| Relational_Boundary
+    FastAPI -->|PyMongo Connection Pool| Document_Boundary
+    Tickets -.->|Cross-DB Reference: event_id| Events
+```
 
 ### Domain Boundary Separation:
 1. **PostgreSQL (Port 5432)**:
@@ -34,7 +83,7 @@ A high-performance, production-grade Dual-Database backend API for concert, musi
 
 ### Step 1: Clone Repository & Configure Environment
 ```bash
-git clone (https://github.com/RowyMonkle/269340-Pruet_WebDev)
+git clone https://github.com/RowyMonkle/269340-Pruet_WebDev.git
 cd 269340-Pruet_WebDev
 
 # Copy environment file template
@@ -68,12 +117,12 @@ source .venv/bin/activate
 pip install -r requirements.txt
 ```
 
-### Step 5: Initialize Database Migrations (PostgreSQL)
-Run the initial baseline migration using Alembic:
+### Step 5: Mark Baseline Database Migration
+Since Docker automatically initializes the PostgreSQL schema via `init-db/init.sql` upon container startup, stamp the baseline version in Alembic:
 ```bash
-alembic upgrade head
+alembic stamp head
 ```
-*(Note: PostgreSQL also auto-initializes DDL from `init-db/init.sql` upon first container launch).*
+*(For future zero-downtime schema evolution using the Expand-and-Contract pattern, create migrations via `alembic revision -m "..."` and apply them with `alembic upgrade head`).*
 
 ### Step 6: Seed Over 1,000 Dummy Records
 Execute the automated database seeder to pre-populate realistic mock data in **both** databases:
@@ -81,8 +130,8 @@ Execute the automated database seeder to pre-populate realistic mock data in **b
 python seed.py
 ```
 **Output Summary:**
-- **PostgreSQL**: ~2,000 records (250 Users, 500 Orders, 1,250 Tickets).
-- **MongoDB**: ~1,400 documents (200 Events, 1,200 ActivityLogs).
+- **PostgreSQL**: ~2,000 records (250 Users, 500 Orders with matched ticket sums, ~1,250 Tickets).
+- **MongoDB**: ~1,400 documents (200 Events with stage zones, 1,200 ActivityLogs referencing valid user IDs).
 
 ### Step 7: Run FastAPI Server
 ```bash
@@ -99,15 +148,15 @@ uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
 | Method | Route | Target DB | Status | Description |
 | :--- | :--- | :--- | :--- | :--- |
 | `GET` | `/health` | Both | `200` / `503` | Verifies live connectivity to PostgreSQL and MongoDB |
-| `POST` | `/api/v1/users` | PostgreSQL | `201`, `409` | Register user account with hashed password and uniqueness checks |
+| `POST` | `/api/v1/users` | PostgreSQL | `201`, `400`, `409` | Register user account (strictly forces fan role, hashes password) |
 | `GET` | `/api/v1/users/{id}` | PostgreSQL | `200`, `404` | Fetch user details via `.options(load_only(...))` projection |
-| `GET` | `/api/v1/users` | PostgreSQL | `200` | Paginated list of users |
+| `GET` | `/api/v1/users` | PostgreSQL | `200` | Paginated list of users (optimized projection, zero N+1 queries) |
 | `GET` | `/api/v1/events` | MongoDB | `200` | Fetch paginated concert/festival catalog with field projections |
 | `POST` | `/api/v1/events` | MongoDB | `201`, `400` | Create event document with nested dynamic attributes |
 | `GET` | `/api/v1/events/{id}` | MongoDB | `200`, `404` | Fetch single event document by its ObjectId |
-| `GET` | `/api/v1/products` | MongoDB | `200` | *Rubric compatibility alias for GET /api/v1/events* |
-| `POST` | `/api/v1/products` | MongoDB | `201` | *Rubric compatibility alias for POST /api/v1/events* |
-| `POST` | `/api/v1/orders` | Dual-DB | `201`, `400`, `409` | Atomic checkout: creates order/tickets in PG and reserves seats in Mongo |
+| `GET` | `/api/v1/products` | MongoDB | `200` | Catalog alias for /events |
+| `POST` | `/api/v1/products` | MongoDB | `201` | Catalog alias for /events |
+| `POST` | `/api/v1/orders` | Dual-DB | `201`, `400`, `409` | Atomic checkout: enforces Mongo zone price, checks capacity, prevents double-booking |
 | `GET` | `/api/v1/orders/{id}`| PostgreSQL | `200`, `404` | Fetch order details with associated tickets (joinedload) |
 
 ---
@@ -115,7 +164,7 @@ uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
 ## 5. Architectural Directives
 
 ### 1. Database Projections & Eliminating N+1 Bottlenecks
-- **SQLAlchemy (PostgreSQL)**: All entity queries utilize `.options(load_only(...))` so heavy or sensitive columns (e.g. `hashed_password`) are never loaded into memory. Related ticket collections use `joinedload` to prevent N+1 query loops.
+- **SQLAlchemy (PostgreSQL)**: All entity queries utilize `.options(load_only(...))` including `updated_at` so heavy or sensitive columns (e.g. `hashed_password`) are never loaded into memory, and no secondary lazy-load queries are triggered. Related ticket collections use `joinedload` to prevent N+1 query loops.
 - **PyMongo (MongoDB)**: All collection queries use projection dictionaries (e.g. `{"_id": 1, "title": 1, "zones": 1, ...}`) to eliminate document over-fetching over the wire.
 
 ### 2. Zero-Downtime Schema Evolution (Expand and Contract Pattern)

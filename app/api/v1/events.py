@@ -14,8 +14,8 @@ from app.services.event_service import (
 # Main Events router
 router = APIRouter(prefix="/events", tags=["Events & Festivals (MongoDB)"])
 
-# Products router alias for full compatibility with general course checkpoint rubric
-products_router = APIRouter(prefix="/products", tags=["Products / Events Catalog Alias (MongoDB)"])
+# Products catalog alias router
+products_router = APIRouter(prefix="/products", tags=["Products / Catalog Alias (MongoDB)"])
 
 
 @router.get(
@@ -77,7 +77,7 @@ def get_event_by_id(
     return get_event_by_id_svc(mongo_db, event_id)
 
 
-# Mirror endpoints to products_router for rubric compatibility
+# Mirror endpoints to products_router as catalog alias
 products_router.add_api_route(
     "",
     endpoint=list_events,
@@ -85,7 +85,7 @@ products_router.add_api_route(
     response_model=PaginatedResponse[EventResponse],
     status_code=status.HTTP_200_OK,
     summary="Fetch Paginated Catalog (Alias)",
-    description="Alias endpoint for GET /api/v1/events meeting Checkpoint 1 rubric.",
+    description="Catalog alias for GET /api/v1/events.",
 )
 
 products_router.add_api_route(
@@ -95,7 +95,7 @@ products_router.add_api_route(
     response_model=EventResponse,
     status_code=status.HTTP_201_CREATED,
     summary="Create Product with Dynamic Attributes (Alias)",
-    description="Alias endpoint for POST /api/v1/events meeting Checkpoint 1 rubric.",
+    description="Catalog alias for POST /api/v1/events.",
 )
 
 products_router.add_api_route(
@@ -105,4 +105,5 @@ products_router.add_api_route(
     response_model=EventResponse,
     status_code=status.HTTP_200_OK,
     summary="Get Product Details (Alias)",
+    description="Catalog alias for GET /api/v1/events/{id}.",
 )

@@ -25,9 +25,9 @@ class User(Base):
     """Core account data for fans, organizers, and platform administrators."""
     __tablename__ = "users"
 
-    id = Column(Integer, primary_key=True, index=True, autoincrement=True)
-    email = Column(String(255), unique=True, nullable=False, index=True)
-    username = Column(String(100), unique=True, nullable=False, index=True)
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    email = Column(String(255), unique=True, nullable=False)
+    username = Column(String(100), unique=True, nullable=False)
     hashed_password = Column(String(255), nullable=False)
     full_name = Column(String(255), nullable=False)
     role = Column(String(50), nullable=False, default="fan", server_default="fan")
@@ -55,8 +55,8 @@ class Order(Base):
     """Transactional billing, payment state, and booking lifecycle."""
     __tablename__ = "orders"
 
-    id = Column(Integer, primary_key=True, index=True, autoincrement=True)
-    order_number = Column(String(64), unique=True, nullable=False, index=True)
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    order_number = Column(String(64), unique=True, nullable=False)
     user_id = Column(
         Integer,
         ForeignKey("users.id", ondelete="RESTRICT"),
@@ -107,7 +107,7 @@ class Ticket(Base):
     """Exact seating and zone allocations tied to orders to prevent double-booking."""
     __tablename__ = "tickets"
 
-    id = Column(Integer, primary_key=True, index=True, autoincrement=True)
+    id = Column(Integer, primary_key=True, autoincrement=True)
     order_id = Column(
         Integer,
         ForeignKey("orders.id", ondelete="CASCADE"),
@@ -116,7 +116,7 @@ class Ticket(Base):
     )
     # References MongoDB Event document ID (cross-database relational pointer)
     event_id = Column(String(64), nullable=False, index=True)
-    ticket_code = Column(String(64), unique=True, nullable=False, index=True)
+    ticket_code = Column(String(64), unique=True, nullable=False)
     seat_zone = Column(String(50), nullable=False, index=True)
     seat_number = Column(String(50), nullable=True)
     price = Column(Numeric(10, 2), nullable=False)
@@ -139,6 +139,15 @@ class Ticket(Base):
     __table_args__ = (
         CheckConstraint("price >= 0", name="chk_ticket_price_positive"),
         Index("idx_tickets_event_zone", "event_id", "seat_zone"),
+        # Partial unique index enforcing double-booking prevention for valid seated tickets
+        Index(
+            "uq_tickets_event_zone_seat",
+            "event_id",
+            "seat_zone",
+            "seat_number",
+            unique=True,
+            postgresql_where=text("seat_number IS NOT NULL AND status = 'valid'"),
+        ),
     )
 
     def __repr__(self):

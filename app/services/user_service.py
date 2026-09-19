@@ -64,7 +64,11 @@ def get_user_by_id(db: Session, user_id: int) -> User:
 def get_users_paginated(
     db: Session, page: int = 1, page_size: int = 20
 ) -> Tuple[List[User], int]:
-    """Return paginated list of users using database projection."""
+    """Return paginated list of users using database projection.
+
+    Fixes N+1 issue:
+    Includes all fields serialized by UserResponse (including updated_at) to avoid deferred column loads.
+    """
     query = db.query(User).options(
         load_only(
             User.id,
@@ -73,6 +77,7 @@ def get_users_paginated(
             User.full_name,
             User.role,
             User.created_at,
+            User.updated_at,  # Included to prevent N+1 query triggers
         )
     )
     total = query.count()
@@ -84,9 +89,10 @@ def get_users_paginated(
 def create_user(db: Session, user_in: UserCreate) -> User:
     """Create a new user account with uniqueness validation and hashed password.
 
-    Returns HTTP 409 Conflict if email or username already exists.
+    Security Enforcement:
+    - Public registration strictly sets role to 'fan'. Administrative roles cannot be self-assigned.
+    - Returns HTTP 409 Conflict if email or username already exists.
     """
-    # Check for existing email or username
     existing_user = (
         db.query(User)
         .options(load_only(User.id, User.email, User.username))
@@ -105,7 +111,7 @@ def create_user(db: Session, user_in: UserCreate) -> User:
         username=user_in.username,
         hashed_password=hash_password(user_in.password),
         full_name=user_in.full_name,
-        role=user_in.role,
+        role="fan",  # Strictly force 'fan' role for all public self-registrations
     )
     db.add(db_user)
     db.commit()

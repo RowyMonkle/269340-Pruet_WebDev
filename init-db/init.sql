@@ -1,9 +1,10 @@
 -- ==============================================================================
 -- 269340 Ticket Booking Platform - PostgreSQL DDL Baseline
 -- Checkpoint 1: Normalized Transactional Schema (Users, Orders, Tickets)
+-- Follows Zero-Downtime Expand-and-Contract Architecture Patterns
 -- ==============================================================================
 
--- Users Table (Core accounts for fans, organizers, and admins)
+-- 1. Users Table (Core accounts for fans, organizers, and admins)
 CREATE TABLE IF NOT EXISTS users (
     id SERIAL PRIMARY KEY,
     email VARCHAR(255) NOT NULL UNIQUE,
@@ -15,9 +16,7 @@ CREATE TABLE IF NOT EXISTS users (
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP NOT NULL
 );
 
--- Indexing for high-frequency lookups and login queries
-CREATE INDEX IF NOT EXISTS idx_users_email ON users(email);
-CREATE INDEX IF NOT EXISTS idx_users_username ON users(username);
+-- Index for ordering and pagination (UNIQUE columns email and username already have implicit unique indexes)
 CREATE INDEX IF NOT EXISTS idx_users_created_at ON users(created_at DESC);
 
 -- 2. Orders Table (Transactional billing and payment states)
@@ -32,11 +31,11 @@ CREATE TABLE IF NOT EXISTS orders (
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP NOT NULL
 );
 
--- Indexing for user order history and status filtering
+-- Non-unique indexes for user order queries and status filtering
 CREATE INDEX IF NOT EXISTS idx_orders_user_id ON orders(user_id);
-CREATE INDEX IF NOT EXISTS idx_orders_order_number ON orders(order_number);
 CREATE INDEX IF NOT EXISTS idx_orders_status ON orders(status);
 CREATE INDEX IF NOT EXISTS idx_orders_created_at ON orders(created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_orders_user_status ON orders(user_id, status);
 
 -- 3. Tickets Table (Exact seating/zone allocations tied to orders to prevent double-booking)
 CREATE TABLE IF NOT EXISTS tickets (
@@ -51,8 +50,12 @@ CREATE TABLE IF NOT EXISTS tickets (
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP NOT NULL
 );
 
--- Indexing for seat lookups, ticket verification, and event queries
+-- Foreign key and event lookups
 CREATE INDEX IF NOT EXISTS idx_tickets_order_id ON tickets(order_id);
 CREATE INDEX IF NOT EXISTS idx_tickets_event_id ON tickets(event_id);
-CREATE INDEX IF NOT EXISTS idx_tickets_ticket_code ON tickets(ticket_code);
 CREATE INDEX IF NOT EXISTS idx_tickets_event_zone ON tickets(event_id, seat_zone);
+
+-- Partial Unique Index: Strictly enforces NO double-booking for valid tickets with assigned seats
+CREATE UNIQUE INDEX IF NOT EXISTS uq_tickets_event_zone_seat 
+ON tickets (event_id, seat_zone, seat_number) 
+WHERE seat_number IS NOT NULL AND status = 'valid';

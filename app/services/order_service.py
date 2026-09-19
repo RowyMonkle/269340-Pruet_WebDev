@@ -5,6 +5,7 @@ from typing import List
 from bson import ObjectId
 from bson.errors import InvalidId
 from fastapi import HTTPException, status
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, joinedload, load_only
 from pymongo.database import Database
 
@@ -37,11 +38,12 @@ def create_order_dual_db(
 
     Orchestration:
     1. Verify customer account in PostgreSQL (relational boundary).
-    2. Verify event and zone capacity in MongoDB (document boundary).
-    3. Start PostgreSQL transaction and persist Order + Ticket entities.
-    4. Atomically reserve seat allocations in MongoDB using $inc.
-    5. Handle compensating transactions / rollbacks if either database operation fails.
-    6. Record telemetry to MongoDB 'activity_logs'.
+    2. Verify event and zone in MongoDB, extract authoritative price from MongoDB catalog (ignores client tampering).
+    3. Atomically reserve seat capacity in MongoDB using $elemMatch and $lt capacity condition (prevents overselling).
+    4. Start PostgreSQL transaction and persist Order + Ticket entities.
+    5. Catch double-booking violations via partial unique index on (event_id, seat_zone, seat_number).
+    6. Roll back and execute compensating transactions if any step fails.
+    7. Record telemetry to MongoDB 'activity_logs'.
     """
     # 1. Verify User exists in PostgreSQL (load only id for performance)
     user = (
@@ -56,7 +58,7 @@ def create_order_dual_db(
             detail=f"User with ID {order_in.user_id} does not exist",
         )
 
-    # 2. Pre-validate Event & Zone availability in MongoDB
+    # 2. Pre-validate Event & Zone in MongoDB and determine Authoritative Pricing
     events_collection = mongo_db["events"]
     validated_items = []
     total_amount = Decimal("0.00")
@@ -80,7 +82,7 @@ def create_order_dual_db(
                 detail=f"Event with ID '{item.event_id}' not found",
             )
 
-        # Match zone
+        # Match requested zone
         matched_zone = None
         for z in event_doc.get("zones", []):
             if z.get("name").strip().lower() == item.seat_zone.strip().lower():
@@ -93,27 +95,55 @@ def create_order_dual_db(
                 detail=f"Zone '{item.seat_zone}' does not exist in event '{event_doc.get('title')}'",
             )
 
-        capacity = matched_zone.get("capacity", 0)
-        booked = matched_zone.get("booked_count", 0)
-        if booked >= capacity:
-            raise HTTPException(
-                status_code=status.HTTP_409_CONFLICT,
-                detail=f"Zone '{item.seat_zone}' for event '{event_doc.get('title')}' is sold out",
-            )
+        zone_capacity = int(matched_zone.get("capacity", 0))
+        # Strictly use authoritative price stored in MongoDB catalog (prevents client price manipulation)
+        authoritative_price = Decimal(str(matched_zone.get("price", 0.0)))
+        total_amount += authoritative_price
 
-        item_price = Decimal(str(item.price))
-        total_amount += item_price
         validated_items.append(
             {
                 "event_id": item.event_id,
                 "event_oid": event_oid,
+                "event_title": event_doc.get("title", ""),
                 "seat_zone": matched_zone.get("name"),
                 "seat_number": item.seat_number,
-                "price": item_price,
+                "price": authoritative_price,
+                "capacity": zone_capacity,
             }
         )
 
-    # 3. PostgreSQL Transaction: Order & Ticket Creation
+    # 3. Atomic MongoDB Capacity Reservation (prevents race conditions & overselling)
+    mongo_reserved_zones = []
+    for v_item in validated_items:
+        update_res = events_collection.update_one(
+            {
+                "_id": v_item["event_oid"],
+                "zones": {
+                    "$elemMatch": {
+                        "name": v_item["seat_zone"],
+                        "booked_count": {"$lt": v_item["capacity"]},
+                    }
+                },
+            },
+            {"$inc": {"zones.$.booked_count": 1}},
+        )
+        if update_res.modified_count == 0:
+            # Compensate previously reserved zones in this order
+            for ev_oid, z_name in mongo_reserved_zones:
+                try:
+                    events_collection.update_one(
+                        {"_id": ev_oid, "zones.name": z_name},
+                        {"$inc": {"zones.$.booked_count": -1}},
+                    )
+                except Exception:
+                    pass
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail=f"Zone '{v_item['seat_zone']}' for event '{v_item['event_title']}' is sold out",
+            )
+        mongo_reserved_zones.append((v_item["event_oid"], v_item["seat_zone"]))
+
+    # 4. PostgreSQL Transaction: Order & Ticket Creation
     order_number = f"ORD-{datetime.now(timezone.utc).strftime('%Y%m%d')}-{uuid.uuid4().hex[:8].upper()}"
     new_order = Order(
         order_number=order_number,
@@ -123,7 +153,6 @@ def create_order_dual_db(
         payment_method=order_in.payment_method,
     )
 
-    mongo_reserved_zones = []
     try:
         db.add(new_order)
         db.flush()  # Generates new_order.id
@@ -144,30 +173,11 @@ def create_order_dual_db(
             db.add(ticket)
 
         db.flush()
-
-        # 4. Atomic MongoDB Capacity Reservation
-        for v_item in validated_items:
-            update_res = events_collection.update_one(
-                {
-                    "_id": v_item["event_oid"],
-                    "zones.name": v_item["seat_zone"],
-                },
-                {"$inc": {"zones.$.booked_count": 1}},
-            )
-            if update_res.modified_count == 0:
-                raise RuntimeError(
-                    f"Failed to atomically reserve seat in zone '{v_item['seat_zone']}'"
-                )
-            mongo_reserved_zones.append(
-                (v_item["event_oid"], v_item["seat_zone"])
-            )
-
-        # 5. Commit PostgreSQL transaction
         db.commit()
         db.refresh(new_order)
 
-    except Exception as exc:
-        # Compensation & Rollback across Dual-DB
+    except IntegrityError as iexc:
+        # Enforces double-booking prevention: duplicate (event_id, seat_zone, seat_number)
         db.rollback()
         for ev_oid, z_name in mongo_reserved_zones:
             try:
@@ -176,7 +186,22 @@ def create_order_dual_db(
                     {"$inc": {"zones.$.booked_count": -1}},
                 )
             except Exception:
-                pass  # Compensating rollback log
+                pass
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Double-booking prevented: One or more selected seats have already been reserved for this event.",
+        )
+
+    except Exception as exc:
+        db.rollback()
+        for ev_oid, z_name in mongo_reserved_zones:
+            try:
+                events_collection.update_one(
+                    {"_id": ev_oid, "zones.name": z_name},
+                    {"$inc": {"zones.$.booked_count": -1}},
+                )
+            except Exception:
+                pass
 
         if isinstance(exc, HTTPException):
             raise exc
@@ -185,7 +210,7 @@ def create_order_dual_db(
             detail=f"Dual-database transaction failed: {str(exc)}",
         )
 
-    # 6. Asynchronous / Telemetry logging to MongoDB 'activity_logs'
+    # 5. Asynchronous / Telemetry logging to MongoDB 'activity_logs'
     try:
         mongo_db["activity_logs"].insert_one(
             {
