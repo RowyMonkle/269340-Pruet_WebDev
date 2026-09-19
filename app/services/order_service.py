@@ -1,7 +1,8 @@
+import json
 import uuid
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from decimal import Decimal
-from typing import List
+from typing import List, Optional
 from bson import ObjectId
 from bson.errors import InvalidId
 from fastapi import HTTPException, status
@@ -9,15 +10,15 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, joinedload, load_only
 from pymongo.database import Database
 
-from app.models.sql_models import User, Order, Ticket
+from app.models.sql_models import User, Order, Ticket, OutboxEvent
 from app.schemas.order import OrderCreate
 
 
 def get_order_by_id(db: Session, order_id: int) -> Order:
-    """Fetch order details with associated tickets using joinedload to eliminate N+1 queries."""
+    """Fetch order details with associated tickets and payments using joinedload to eliminate N+1 queries."""
     order = (
         db.query(Order)
-        .options(joinedload(Order.tickets))
+        .options(joinedload(Order.tickets), joinedload(Order.payments))
         .filter(Order.id == order_id)
         .first()
     )
@@ -33,19 +34,32 @@ def create_order_dual_db(
     db: Session,
     mongo_db: Database,
     order_in: OrderCreate,
+    idempotency_key: Optional[str] = None,
 ) -> Order:
-    """Execute Dual-Database Transaction for ticket purchasing.
+    """Execute Dual-Database Transaction for ticket seat-holding and checkout.
 
     Orchestration:
-    1. Verify customer account in PostgreSQL (relational boundary).
-    2. Verify event and zone in MongoDB, extract authoritative price from MongoDB catalog (ignores client tampering).
-    3. Atomically reserve seat capacity in MongoDB using $elemMatch and $lt capacity condition (prevents overselling).
-    4. Start PostgreSQL transaction and persist Order + Ticket entities.
-    5. Catch double-booking violations via partial unique index on (event_id, seat_zone, seat_number).
-    6. Roll back and execute compensating transactions if any step fails.
-    7. Record telemetry to MongoDB 'activity_logs'.
+    1. Check Idempotency-Key: if key already exists, return previous order without re-charging/duplicating.
+    2. Verify customer account in PostgreSQL.
+    3. Verify event and zone in MongoDB, extract authoritative price.
+    4. Atomically reserve seat capacity in MongoDB using $elemMatch and $lt capacity condition (prevents overselling).
+    5. Start PostgreSQL transaction: persist Order with 10-minute hold expiry and Tickets with 'held' status.
+    6. Catch double-booking violations via partial unique index on (event_id, seat_zone, seat_number).
+    7. Record SEAT_HELD in OutboxEvent table for cross-DB consistency.
+    8. Roll back and execute compensating transactions if any step fails.
     """
-    # 1. Verify User exists in PostgreSQL (load only id for performance)
+    # 1. Idempotency Check
+    if idempotency_key:
+        existing_order = (
+            db.query(Order)
+            .options(joinedload(Order.tickets), joinedload(Order.payments))
+            .filter(Order.idempotency_key == idempotency_key)
+            .first()
+        )
+        if existing_order:
+            return existing_order
+
+    # 2. Verify User exists in PostgreSQL (load only id for performance)
     user = (
         db.query(User)
         .options(load_only(User.id))
@@ -58,7 +72,7 @@ def create_order_dual_db(
             detail=f"User with ID {order_in.user_id} does not exist",
         )
 
-    # 2. Pre-validate Event & Zone in MongoDB and determine Authoritative Pricing
+    # 3. Pre-validate Event & Zone in MongoDB and determine Authoritative Pricing
     events_collection = mongo_db["events"]
     validated_items = []
     total_amount = Decimal("0.00")
@@ -96,7 +110,7 @@ def create_order_dual_db(
             )
 
         zone_capacity = int(matched_zone.get("capacity", 0))
-        # Strictly use authoritative price stored in MongoDB catalog (prevents client price manipulation)
+        # Authoritative price stored in MongoDB catalog
         authoritative_price = Decimal(str(matched_zone.get("price", 0.0)))
         total_amount += authoritative_price
 
@@ -112,7 +126,7 @@ def create_order_dual_db(
             }
         )
 
-    # 3. Atomic MongoDB Capacity Reservation (prevents race conditions & overselling)
+    # 4. Atomic MongoDB Capacity Reservation (prevents overselling)
     mongo_reserved_zones = []
     for v_item in validated_items:
         update_res = events_collection.update_one(
@@ -143,14 +157,19 @@ def create_order_dual_db(
             )
         mongo_reserved_zones.append((v_item["event_oid"], v_item["seat_zone"]))
 
-    # 4. PostgreSQL Transaction: Order & Ticket Creation
-    order_number = f"ORD-{datetime.now(timezone.utc).strftime('%Y%m%d')}-{uuid.uuid4().hex[:8].upper()}"
+    # 5. PostgreSQL Transaction: Order & Ticket Creation with 10-Minute Hold Window
+    now = datetime.now(timezone.utc)
+    hold_expires_at = now + timedelta(minutes=10)
+    order_number = f"ORD-{now.strftime('%Y%m%d')}-{uuid.uuid4().hex[:8].upper()}"
+
     new_order = Order(
         order_number=order_number,
         user_id=order_in.user_id,
         total_amount=total_amount,
-        status="confirmed",
+        status="pending",  # Pending state holds seats until paid
         payment_method=order_in.payment_method,
+        expires_at=hold_expires_at,
+        idempotency_key=idempotency_key,
     )
 
     try:
@@ -167,16 +186,34 @@ def create_order_dual_db(
                 seat_zone=v_item["seat_zone"],
                 seat_number=v_item["seat_number"],
                 price=v_item["price"],
-                status="valid",
+                status="held",  # Held during the 10-minute hold window
             )
             created_tickets.append(ticket)
             db.add(ticket)
 
         db.flush()
+
+        # Transactional Outbox Pattern: Record SEAT_HELD event in PostgreSQL transaction
+        outbox = OutboxEvent(
+            event_type="SEAT_HELD",
+            aggregate_id=str(new_order.id),
+            payload=json.dumps({
+                "order_id": new_order.id,
+                "order_number": order_number,
+                "expires_at": hold_expires_at.isoformat(),
+                "tickets": [
+                    {"event_id": t.event_id, "seat_zone": t.seat_zone, "seat_number": t.seat_number}
+                    for t in created_tickets
+                ],
+            }),
+            status="pending",
+        )
+        db.add(outbox)
+
         db.commit()
         db.refresh(new_order)
 
-    except IntegrityError as iexc:
+    except IntegrityError:
         # Enforces double-booking prevention: duplicate (event_id, seat_zone, seat_number)
         db.rollback()
         for ev_oid, z_name in mongo_reserved_zones:
@@ -210,24 +247,65 @@ def create_order_dual_db(
             detail=f"Dual-database transaction failed: {str(exc)}",
         )
 
-    # 5. Asynchronous / Telemetry logging to MongoDB 'activity_logs'
+    # 6. Telemetry logging to MongoDB 'activity_logs'
     try:
         mongo_db["activity_logs"].insert_one(
             {
                 "user_id": order_in.user_id,
-                "action": "create_order",
+                "action": "hold_seats",
                 "resource_type": "order",
                 "resource_id": order_number,
                 "metadata": {
                     "order_id": new_order.id,
                     "tickets_count": len(order_in.items),
                     "total_amount": float(total_amount),
-                    "payment_method": order_in.payment_method,
+                    "expires_at": hold_expires_at.isoformat(),
                 },
-                "timestamp": datetime.now(timezone.utc),
+                "timestamp": now,
             }
         )
     except Exception:
-        pass  # Non-blocking telemetry
+        pass
 
     return new_order
+
+
+def cleanup_expired_seat_holds(db: Session, mongo_db: Database) -> int:
+    """Find all expired pending orders and release their held seats in MongoDB.
+
+    Cross-DB reconciliation job ensuring held seats never stay locked forever.
+    """
+    now = datetime.now(timezone.utc)
+    expired_orders = (
+        db.query(Order)
+        .options(joinedload(Order.tickets))
+        .filter(Order.status == "pending", Order.expires_at < now)
+        .all()
+    )
+
+    cleaned_count = 0
+    for order in expired_orders:
+        order.status = "expired"
+        for ticket in order.tickets:
+            ticket.status = "cancelled"
+            try:
+                mongo_db["events"].update_one(
+                    {"_id": ObjectId(ticket.event_id), "zones.name": ticket.seat_zone},
+                    {"$inc": {"zones.$.booked_count": -1}},
+                )
+            except Exception:
+                pass
+
+        outbox = OutboxEvent(
+            event_type="SEAT_HOLD_EXPIRED",
+            aggregate_id=str(order.id),
+            payload=json.dumps({"order_id": order.id, "order_number": order.order_number, "reason": "cron_cleanup"}),
+            status="pending",
+        )
+        db.add(outbox)
+        cleaned_count += 1
+
+    if cleaned_count > 0:
+        db.commit()
+
+    return cleaned_count
