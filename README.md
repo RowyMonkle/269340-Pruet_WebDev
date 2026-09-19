@@ -8,9 +8,9 @@ A high-performance, production-grade Dual-Database backend API for concert, musi
 
 | Student ID | Full Name | Role |
 | :--- | :--- | :--- |
-| **670615022** | Natthakritta Aoktan | Backend Lead & Database Architecture |
+| **670615022** | Natthakritta Aoktan | Backend Lead & Project Management|
 | **670615027** | Nannapat Chaipoon | API Engineering & Request Validation |
-| **670615029** | Poonyaporn Intaphrom | Data Engineering & Project Management |
+| **670615029** | Poonyaporn Intaphrom | Data Engineering & Database Architecture |
 | **670615032** | Pandara Yutiraksa | System Documentation & Frontend design |
 
 ---
@@ -25,7 +25,7 @@ A high-performance, production-grade Dual-Database backend API for concert, musi
          ▼
  ┌────────────────┐
  │  Web API Tier  │
- │ (C# / Python)  │
+ │(FastAPI/Python)│
  └────┬──────┬────┘
       │      │ 
 (Relational) │ (Document)
@@ -46,11 +46,15 @@ graph TD
     
     subgraph Relational_Boundary ["PostgreSQL 15 (Port 5432) - Transactional Core State"]
         Users["users Table (Accounts, Auth, Roles)"]
-        Orders["orders Table (Billing, Status, Payment)"]
-        Tickets["tickets Table (Seat Allocation, QR Codes)"]
+        Orders["orders Table (Billing, Status, Payment, Hold Expiry)"]
+        Tickets["tickets Table (Seat Allocation, Partial Unique Index)"]
+        Payments["payments Table (1:N Transaction Attempts)"]
+        Outbox["outbox_events Table (Transactional Outbox Log)"]
         
         Users -->|"1 : N"| Orders
         Orders -->|"1 : N (Cascade)"| Tickets
+        Orders -->|"1 : N (Cascade)"| Payments
+        Orders -.->|"Records State Event"| Outbox
     end
 
     subgraph Document_Boundary ["MongoDB 6.0 (Port 27017) - Catalog & Unstructured"]
@@ -59,11 +63,18 @@ graph TD
     end
 
     FastAPI -->|"SQLAlchemy 2.0 Pool"| Users
+    FastAPI -->|"SQLAlchemy 2.0 Pool"| Orders
     FastAPI -->|"PyMongo Connection Pool"| Events
     Tickets -.->|"Cross-DB Reference: event_id"| Events
 ```
 
 ### Domain Boundary Separation:
+
+| Database | Data | Why |
+| :--- | :--- | :--- |
+| **PostgreSQL** | `users`, `orders`, `tickets`, `payments`, `outbox_events` | Money and seat ownership need constraints, foreign keys and ACID transactions. |
+| **MongoDB** | `events` (zones, prices, capacity, `booked_count`, nested artist and venue, free-form `dynamic_attributes`), `activity_logs` | Event documents vary in shape, and telemetry is high-volume and append-only. |
+
 1. **PostgreSQL (Port 5432)**:
    - **Users**: Core user credentials, security hashes, and role-based access (`fan`, `organizer`, `admin`).
    - **Orders**: ACID transactional records preventing double charging and maintaining exact financial state.
@@ -92,75 +103,43 @@ cp .env.example .env
 
 ### Step 2: Launch Services with Docker Compose
 
-**Option A: Launch Database Containers Only (Local Python Development)**
+**full stack in Docker**
 ```bash
-docker compose up -d postgres_db mongo_db
-docker compose ps
-```
-
-**Option B: Full-Stack Container Orchestration (API + Databases, Zero Local Python Needed)**
-```bash
-# 1. Build and start all services
 docker compose up --build -d
-docker compose ps
-
-# 2. Stamp initial Alembic baseline inside the running container
-docker compose exec api alembic stamp head
-
-# 3. Seed over 2,800 realistic records inside the container
-docker compose exec api python seed.py
-
-# 4. Run automated concurrency test suite inside container
-docker compose exec api pytest tests/test_concurrency.py -v
+docker compose ps                           # wait until the databases show "healthy"
+docker compose exec api alembic stamp head  # marks the schema created by init.sql as the baseline
+docker compose exec api python seed.py      # seed both databases
 ```
+
+### Step 3: Open the API
+- Swagger UI: http://localhost:8000/docs
+- ReDoc: http://localhost:8000/redoc
+- Health check: http://localhost:8000/health (`200` when both databases respond, otherwise `503`)
+
+   ### Seed data
+`seed.py` clears and refills both databases, and prints the exact totals when it finishes.
+   - **PostgreSQL:** 250 users, 500 orders, and their tickets, payments and outbox events (over 1,000 rows in total). Order totals equal the sum of their ticket prices, and ticket prices and zones match the Mongo events.
+   - **MongoDB:** 200 events and 1,200 activity logs (1,400 documents). Logs reference real seeded user IDs.
+   - The random seed is fixed (`42`), so every run produces the same data shape.
+
+   ### Troubleshooting
+- **`role "dev_user" does not exist` or a Mongo "connection refused" error.** Something else may be using port 5432 (for example a locally installed PostgreSQL service on Windows), or an old Docker volume was created with different credentials. Stop the local service, then reset:
+  ```bash
+  docker compose down -v
+  docker compose up -d postgres_db mongo_db
+  ```
+- **`init.sql` changes are not applied.** The script only runs when the Postgres volume is empty, so run `docker compose down -v` first.
+- **Ports.** Postgres uses 5432, MongoDB 27017 and the API 8000. Change the mapping in `docker-compose.yml` (and `.env`) if they are taken.
 
 ---
 
-### Alternative: Local Python Development Workflow (Option A)
 
-#### Step 3: Set Up Python Virtual Environment
+### Step 4: Run Automated Concurrency & Stress Tests
 ```bash
-# Create and activate virtual environment
-python -m venv .venv
+# Run inside Docker container (recommended):
+docker compose exec api pytest tests/test_concurrency.py -v
 
-# On Linux / macOS:
-source .venv/bin/activate
-
-# On Windows (PowerShell):
-.venv\Scripts\Activate.ps1
-```
-
-#### Step 4: Install Dependencies
-```bash
-pip install -r requirements.txt
-```
-
-#### Step 5: Mark Baseline Database Migration
-Since Docker automatically initializes the PostgreSQL schema via `init-db/init.sql` upon container startup, stamp the baseline version in Alembic:
-```bash
-alembic stamp head
-```
-*(For future zero-downtime schema evolution using the Expand-and-Contract pattern, create migrations via `alembic revision -m "..."` and apply them with `alembic upgrade head`).*
-
-#### Step 6: Seed Over 2,800 Realistic Records
-Execute the automated database seeder to pre-populate realistic mock data in **both** databases:
-```bash
-python seed.py
-```
-**Output Summary (Verified Seed Run):**
-- **PostgreSQL**: ~2,875 records (250 Users, 500 Orders with matched ticket sums, ~1,250 Tickets, ~375 Payments, ~500 OutboxEvents).
-- **MongoDB**: ~1,400 documents (200 Events with stage zones, 1,200 ActivityLogs referencing valid user IDs).
-
-#### Step 7: Run FastAPI Server (Local Development)
-```bash
-uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
-```
-- Interactive Swagger UI: [http://localhost:8000/docs](http://localhost:8000/docs)
-- Interactive ReDoc: [http://localhost:8000/redoc](http://localhost:8000/redoc)
-- Health Check: [http://localhost:8000/health](http://localhost:8000/health)
-
-#### Step 8: Run Concurrency & Stress Tests
-```bash
+# Or run locally if Python virtual environment is active:
 pytest tests/test_concurrency.py -v
 ```
 **Automated Test Scenarios Covered:**
