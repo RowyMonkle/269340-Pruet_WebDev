@@ -34,7 +34,7 @@ A high-performance, production-grade Dual-Database backend API for concert, musi
 
 ### Step 1: Clone Repository & Configure Environment
 ```bash
-git clone <repository_url>
+git clone (https://github.com/RowyMonkle/269340-Pruet_WebDev)
 cd 269340-Pruet_WebDev
 
 # Copy environment file template
