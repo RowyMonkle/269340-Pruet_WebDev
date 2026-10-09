@@ -1,3 +1,5 @@
+name: 269340-pruet_ticweb
+
 x-api-env: &api-env
   POSTGRES_HOST: postgres_db
   POSTGRES_PORT: 5432
@@ -11,7 +13,7 @@ x-api-env: &api-env
   APP_PORT: 8000
 
 x-api-service: &api-service
-  image: ticket_api:local
+  image: ticweb_api:local
   restart: unless-stopped
   environment: *api-env
   healthcheck:
@@ -31,7 +33,7 @@ x-api-service: &api-service
 services:
   postgres_db:
     image: postgres:15-alpine
-    container_name: ticket_postgres
+    container_name: ticweb_postgres
     restart: unless-stopped
     environment:
       POSTGRES_DB: main_db
@@ -50,7 +52,7 @@ services:
 
   mongo_db:
     image: mongo:6.0
-    container_name: ticket_mongo
+    container_name: ticweb_mongo
     restart: unless-stopped
     environment:
       MONGO_INITDB_DATABASE: main_db
@@ -69,8 +71,8 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
-    image: ticket_api:local
-    container_name: ticket_migrate
+    image: ticweb_api:local
+    container_name: ticweb_migrate
     command: ["python", "scripts/migrate.py"]
     restart: "no"
     environment: *api-env
@@ -81,19 +83,19 @@ services:
   # Two identical API replicas behind nginx so one can restart while the other serves
   api:
     <<: *api-service
-    container_name: ticket_api
+    container_name: ticweb_api_1
     ports:
       - "8001:8000"
 
   api_2:
     <<: *api-service
-    container_name: ticket_api_2
+    container_name: ticweb_api_2
     ports:
       - "8002:8000"
 
   nginx:
     image: nginx:1.27.4-alpine
-    container_name: ticket_nginx
+    container_name: ticweb_nginx
     restart: unless-stopped
     ports:
       - "8000:80"
