@@ -11,6 +11,8 @@ x-api-env: &api-env
   MONGO_DB: main_db
   APP_HOST: 0.0.0.0
   APP_PORT: 8000
+  ADMIN_TOKEN: ${ADMIN_TOKEN:-dev-admin-token}
+  FLAG_CACHE_SECONDS: 2
 
 x-api-service: &api-service
   image: ticweb_api:local

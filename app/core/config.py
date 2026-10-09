@@ -47,6 +47,11 @@ class Settings(BaseSettings):
     MONGO_MIN_POOL_SIZE: int = 10
     MONGO_URI: Optional[str] = None
 
+    # Runtime feature flags (CP2 expand/contract phases)
+    FLAG_CACHE_SECONDS: float = 2.0
+    # Required in the X-Admin-Token header for /admin endpoints. Empty disables them.
+    ADMIN_TOKEN: str = ""
+
     @property
     def mongo_connection_uri(self) -> str:
         if self.MONGO_URI:
