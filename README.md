@@ -88,6 +88,8 @@ graph TD
 
 ## 3. Quick Start & Setup Instructions
 
+> 📖 **Team Onboarding & Setup Guide:** For detailed member guidelines, high-availability architecture notes, and role-specific workflows, see [project-guide.md](project-guide.md).
+
 ### Prerequisites
 - [Docker & Docker Compose](https://docs.docker.com/get-docker/)
 - [Python 3.10+](https://www.python.org/)
