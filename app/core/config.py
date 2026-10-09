@@ -47,6 +47,9 @@ class Settings(BaseSettings):
     MONGO_MIN_POOL_SIZE: int = 10
     MONGO_URI: Optional[str] = None
 
+    # bcrypt cost factor for password hashing (each +1 doubles the time)
+    BCRYPT_ROUNDS: int = 12
+
     # Runtime feature flags (CP2 expand/contract phases)
     FLAG_CACHE_SECONDS: float = 2.0
     # Required in the X-Admin-Token header for /admin endpoints. Empty disables them.
