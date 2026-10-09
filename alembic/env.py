@@ -10,9 +10,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from app.core.config import settings
 from app.core.database import Base
-# Import every model so Base.metadata is complete (autogenerate would
-# otherwise propose dropping payments and outbox_events).
-from app.models.sql_models import User, Order, Ticket, Payment, OutboxEvent  # noqa: F401
+from app.models.sql_models import User, Order, Ticket
 
 config = context.config
 

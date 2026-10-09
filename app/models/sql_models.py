@@ -36,6 +36,7 @@ class User(Base):
         DateTime(timezone=True),
         server_default=func.now(),
         nullable=False,
+        index=True,
     )
     updated_at = Column(
         DateTime(timezone=True),
@@ -46,10 +47,6 @@ class User(Base):
 
     # Relationships
     orders = relationship("Order", back_populates="user", cascade="all, delete-orphan")
-
-    __table_args__ = (
-        Index("idx_users_created_at", created_at.desc()),
-    )
 
     def __repr__(self):
         return f"<User(id={self.id}, username='{self.username}', role='{self.role}')>"
@@ -65,6 +62,7 @@ class Order(Base):
         Integer,
         ForeignKey("users.id", ondelete="RESTRICT"),
         nullable=False,
+        index=True,
     )
     total_amount = Column(Numeric(10, 2), nullable=False)
     status = Column(
@@ -72,6 +70,7 @@ class Order(Base):
         nullable=False,
         default="pending",
         server_default="pending",
+        index=True,
     )  # pending (held), paid, confirmed, expired, cancelled
     payment_method = Column(
         String(50),
@@ -80,14 +79,15 @@ class Order(Base):
         server_default="promptpay",
     )
     # Seat hold expiry timestamp: pending orders hold seats for ~10 minutes
-    expires_at = Column(DateTime(timezone=True), nullable=True)
+    expires_at = Column(DateTime(timezone=True), nullable=True, index=True)
     # Client-supplied idempotency key ensuring duplicate requests do not create duplicate orders
-    idempotency_key = Column(String(128), unique=True, nullable=True)
+    idempotency_key = Column(String(128), unique=True, nullable=True, index=True)
 
     created_at = Column(
         DateTime(timezone=True),
         server_default=func.now(),
         nullable=False,
+        index=True,
     )
     updated_at = Column(
         DateTime(timezone=True),
@@ -103,10 +103,6 @@ class Order(Base):
 
     __table_args__ = (
         CheckConstraint("total_amount >= 0", name="chk_order_total_amount_positive"),
-        Index("idx_orders_user_id", "user_id"),
-        Index("idx_orders_status", "status"),
-        Index("idx_orders_expires_at", "expires_at"),
-        Index("idx_orders_created_at", created_at.desc()),
         Index("idx_orders_user_status", "user_id", "status"),
         Index("idx_orders_status_expires", "status", "expires_at"),
     )
@@ -124,11 +120,12 @@ class Ticket(Base):
         Integer,
         ForeignKey("orders.id", ondelete="CASCADE"),
         nullable=False,
+        index=True,
     )
     # References MongoDB Event document ID (cross-database relational pointer)
-    event_id = Column(String(64), nullable=False)
+    event_id = Column(String(64), nullable=False, index=True)
     ticket_code = Column(String(64), unique=True, nullable=False)
-    seat_zone = Column(String(50), nullable=False)
+    seat_zone = Column(String(50), nullable=False, index=True)
     seat_number = Column(String(50), nullable=True)
     price = Column(Numeric(10, 2), nullable=False)
     status = Column(
@@ -136,6 +133,7 @@ class Ticket(Base):
         nullable=False,
         default="held",
         server_default="held",
+        index=True,
     )  # held (in pending order), valid (paid/confirmed), used, refunded, cancelled
     created_at = Column(
         DateTime(timezone=True),
@@ -148,8 +146,6 @@ class Ticket(Base):
 
     __table_args__ = (
         CheckConstraint("price >= 0", name="chk_ticket_price_positive"),
-        Index("idx_tickets_order_id", "order_id"),
-        Index("idx_tickets_event_id", "event_id"),
         Index("idx_tickets_event_zone", "event_id", "seat_zone"),
         # Partial unique index: prevents double-booking for any ticket currently held or valid
         Index(
@@ -175,6 +171,7 @@ class Payment(Base):
         Integer,
         ForeignKey("orders.id", ondelete="CASCADE"),
         nullable=False,
+        index=True,
     )
     payment_reference = Column(String(64), unique=True, nullable=False)
     amount = Column(Numeric(10, 2), nullable=False)
@@ -189,6 +186,7 @@ class Payment(Base):
         nullable=False,
         default="pending",
         server_default="pending",
+        index=True,
     )  # pending, completed, failed, refunded
     provider_tx_id = Column(String(128), nullable=True)
 
@@ -196,6 +194,7 @@ class Payment(Base):
         DateTime(timezone=True),
         server_default=func.now(),
         nullable=False,
+        index=True,
     )
     updated_at = Column(
         DateTime(timezone=True),
@@ -209,8 +208,6 @@ class Payment(Base):
 
     __table_args__ = (
         CheckConstraint("amount >= 0", name="chk_payment_amount_positive"),
-        Index("idx_payments_order_id", "order_id"),
-        Index("idx_payments_status", "status"),
         Index("idx_payments_order_status", "order_id", "status"),
     )
 
@@ -223,28 +220,28 @@ class OutboxEvent(Base):
     __tablename__ = "outbox_events"
 
     id = Column(Integer, primary_key=True, autoincrement=True)
-    event_type = Column(String(64), nullable=False)  # SEAT_HELD, SEAT_RELEASED, ORDER_PAID, ORDER_EXPIRED
-    aggregate_type = Column(String(64), nullable=False, default="order", server_default="order")
-    aggregate_id = Column(String(64), nullable=False)
+    event_type = Column(String(64), nullable=False, index=True)  # SEAT_HELD, SEAT_RELEASED, ORDER_PAID, ORDER_EXPIRED
+    aggregate_type = Column(String(64), nullable=False, default="order")
+    aggregate_id = Column(String(64), nullable=False, index=True)
     payload = Column(Text, nullable=False)  # JSON payload
     status = Column(
         String(50),
         nullable=False,
         default="pending",
         server_default="pending",
+        index=True,
     )  # pending, processed, failed
     retry_count = Column(Integer, nullable=False, default=0, server_default="0")
     created_at = Column(
         DateTime(timezone=True),
         server_default=func.now(),
         nullable=False,
+        index=True,
     )
     processed_at = Column(DateTime(timezone=True), nullable=True)
 
     __table_args__ = (
         Index("idx_outbox_status_created", "status", "created_at"),
-        Index("idx_outbox_event_type", "event_type"),
-        Index("idx_outbox_aggregate_id", "aggregate_id"),
     )
 
     def __repr__(self):

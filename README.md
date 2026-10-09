@@ -107,7 +107,7 @@ cp .env.example .env
 ```bash
 docker compose up --build -d
 docker compose ps                           # wait until the databases show "healthy"
-docker compose logs api | grep migrate      # the api container runs scripts/migrate.py (alembic upgrade head) on start
+docker compose exec api alembic stamp head  # marks the schema created by init.sql as the baseline
 docker compose exec api python seed.py      # seed both databases
 ```
 
