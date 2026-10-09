@@ -19,5 +19,5 @@ COPY . .
 # Expose API port
 EXPOSE 8000
 
-# Run FastAPI backend with Uvicorn
-CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
+# Apply pending Alembic migrations, then run FastAPI backend with Uvicorn
+CMD ["sh", "-c", "python scripts/migrate.py && exec uvicorn app.main:app --host 0.0.0.0 --port 8000"]
