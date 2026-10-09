@@ -31,7 +31,10 @@ class User(Base):
     email = Column(String(255), unique=True, nullable=False)
     username = Column(String(100), unique=True, nullable=False)
     hashed_password = Column(String(255), nullable=False)
-    full_name = Column(String(255), nullable=False)
+    # Legacy column, kept during the CP2 expand/contract migration (removed in contract)
+    full_name = Column(String(255), nullable=True)
+    first_name = Column(String(100), nullable=True)
+    last_name = Column(String(100), nullable=True)
     role = Column(String(50), nullable=False, default="fan", server_default="fan")
     created_at = Column(
         DateTime(timezone=True),
@@ -50,6 +53,7 @@ class User(Base):
 
     __table_args__ = (
         Index("idx_users_created_at", created_at.desc()),
+        Index("idx_users_last_name", "last_name"),
     )
 
     def __repr__(self):
