@@ -10,7 +10,9 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from app.core.config import settings
 from app.core.database import Base
-from app.models.sql_models import User, Order, Ticket
+from app.models.sql_models import (  # noqa: F401
+    User, Order, Ticket, Payment, OutboxEvent, FeatureFlag, BackfillCheckpoint,
+)
 
 config = context.config
 

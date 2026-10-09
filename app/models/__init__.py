@@ -1,4 +1,6 @@
-from app.models.sql_models import User, Order, Ticket, Payment, OutboxEvent
+from app.models.sql_models import (
+    User, Order, Ticket, Payment, OutboxEvent, FeatureFlag, BackfillCheckpoint,
+)
 from app.models.nosql_models import init_mongo_indexes
 
 __all__ = [
@@ -7,5 +9,7 @@ __all__ = [
     "Ticket",
     "Payment",
     "OutboxEvent",
+    "FeatureFlag",
+    "BackfillCheckpoint",
     "init_mongo_indexes",
 ]

@@ -1,7 +1,42 @@
+name: 269340-pruet_ticweb
+
+x-api-env: &api-env
+  POSTGRES_HOST: postgres_db
+  POSTGRES_PORT: 5432
+  POSTGRES_USER: dev_user
+  POSTGRES_PASSWORD: dev_password
+  POSTGRES_DB: main_db
+  MONGO_HOST: mongo_db
+  MONGO_PORT: 27017
+  MONGO_DB: main_db
+  APP_HOST: 0.0.0.0
+  APP_PORT: 8000
+  ADMIN_TOKEN: ${ADMIN_TOKEN:-dev-admin-token}
+  FLAG_CACHE_SECONDS: 2
+  BCRYPT_ROUNDS: ${BCRYPT_ROUNDS:-10}
+
+x-api-service: &api-service
+  image: ticweb_api:local
+  restart: unless-stopped
+  environment: *api-env
+  healthcheck:
+    test: ["CMD", "curl", "-fs", "http://localhost:8000/health"]
+    interval: 5s
+    timeout: 3s
+    retries: 5
+    start_period: 10s
+  depends_on:
+    postgres_db:
+      condition: service_healthy
+    mongo_db:
+      condition: service_healthy
+    migrate:
+      condition: service_completed_successfully
+
 services:
   postgres_db:
     image: postgres:15-alpine
-    container_name: ticket_postgres
+    container_name: ticweb_postgres
     restart: unless-stopped
     environment:
       POSTGRES_DB: main_db
@@ -20,7 +55,7 @@ services:
 
   mongo_db:
     image: mongo:6.0
-    container_name: ticket_mongo
+    container_name: ticweb_mongo
     restart: unless-stopped
     environment:
       MONGO_INITDB_DATABASE: main_db
@@ -34,29 +69,45 @@ services:
       timeout: 5s
       retries: 5
 
-  api:
+  # One-shot job: bring the schema to Alembic head before any API replica starts
+  migrate:
     build:
       context: .
       dockerfile: Dockerfile
-    container_name: ticket_api
-    restart: unless-stopped
-    ports:
-      - "8000:8000"
-    environment:
-      POSTGRES_HOST: postgres_db
-      POSTGRES_PORT: 5432
-      POSTGRES_USER: dev_user
-      POSTGRES_PASSWORD: dev_password
-      POSTGRES_DB: main_db
-      MONGO_HOST: mongo_db
-      MONGO_PORT: 27017
-      MONGO_DB: main_db
-      APP_HOST: 0.0.0.0
-      APP_PORT: 8000
+    image: ticweb_api:local
+    container_name: ticweb_migrate
+    command: ["python", "scripts/migrate.py"]
+    restart: "no"
+    environment: *api-env
     depends_on:
       postgres_db:
         condition: service_healthy
-      mongo_db:
+
+  # Two identical API replicas behind nginx so one can restart while the other serves
+  api:
+    <<: *api-service
+    container_name: ticweb_api_1
+    ports:
+      - "8001:8000"
+
+  api_2:
+    <<: *api-service
+    container_name: ticweb_api_2
+    ports:
+      - "8002:8000"
+
+  nginx:
+    image: nginx:1.27.4-alpine
+    container_name: ticweb_nginx
+    restart: unless-stopped
+    ports:
+      - "8000:80"
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+    depends_on:
+      api:
+        condition: service_healthy
+      api_2:
         condition: service_healthy
 
 volumes:

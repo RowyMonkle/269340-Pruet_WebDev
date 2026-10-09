@@ -106,9 +106,14 @@ cp .env.example .env
 **full stack in Docker**
 ```bash
 docker compose up --build -d
-docker compose ps                           # wait until the databases show "healthy"
-docker compose exec api alembic stamp head  # marks the schema created by init.sql as the baseline
+docker compose ps                           # migrate exits 0, api / api_2 show "healthy"
 docker compose exec api python seed.py      # seed both databases
+```
+`migrate` runs `scripts/migrate.py` (Alembic `upgrade head`) once before the API starts. Requests go through nginx on port 8000, which balances across two API replicas (`api` on 8001, `api_2` on 8002).
+
+To ship new API code without downtime, restart the replicas one at a time:
+```bash
+sh scripts/rolling_deploy.sh
 ```
 
 ### Step 3: Open the API
@@ -129,7 +134,7 @@ docker compose exec api python seed.py      # seed both databases
   docker compose up -d postgres_db mongo_db
   ```
 - **`init.sql` changes are not applied.** The script only runs when the Postgres volume is empty, so run `docker compose down -v` first.
-- **Ports.** Postgres uses 5432, MongoDB 27017 and the API 8000. Change the mapping in `docker-compose.yml` (and `.env`) if they are taken.
+- **Ports.** Postgres uses 5432, MongoDB 27017, nginx 8000 and the API replicas 8001/8002. Change the mapping in `docker-compose.yml` (and `.env`) if they are taken.
 
 ---
 

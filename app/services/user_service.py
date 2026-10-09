@@ -3,6 +3,7 @@ import os
 from typing import List, Optional, Tuple
 from fastapi import HTTPException, status
 from sqlalchemy.orm import Session, load_only
+from app.core.config import settings
 from app.models.sql_models import User
 from app.schemas.user import UserCreate
 
@@ -10,7 +11,7 @@ try:
     import bcrypt
 
     def hash_password(password: str) -> str:
-        salt = bcrypt.gensalt()
+        salt = bcrypt.gensalt(rounds=settings.BCRYPT_ROUNDS)
         return bcrypt.hashpw(password.encode("utf-8"), salt).decode("utf-8")
 
     def verify_password(plain_password: str, hashed_password: str) -> bool:

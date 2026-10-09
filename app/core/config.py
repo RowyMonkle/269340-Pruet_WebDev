@@ -33,7 +33,7 @@ class Settings(BaseSettings):
         if self.DATABASE_URL:
             return self.DATABASE_URL
         return (
-            f"postgresql://{self.POSTGRES_USER}:{self.POSTGRES_PASSWORD}@"
+            f"postgresql+psycopg2://{self.POSTGRES_USER}:{self.POSTGRES_PASSWORD}@"
             f"{self.POSTGRES_HOST}:{self.POSTGRES_PORT}/{self.POSTGRES_DB}"
         )
 
@@ -46,6 +46,14 @@ class Settings(BaseSettings):
     MONGO_MAX_POOL_SIZE: int = 50
     MONGO_MIN_POOL_SIZE: int = 10
     MONGO_URI: Optional[str] = None
+
+    # bcrypt cost factor for password hashing (each +1 doubles the time)
+    BCRYPT_ROUNDS: int = 12
+
+    # Runtime feature flags (CP2 expand/contract phases)
+    FLAG_CACHE_SECONDS: float = 2.0
+    # Required in the X-Admin-Token header for /admin endpoints. Empty disables them.
+    ADMIN_TOKEN: str = ""
 
     @property
     def mongo_connection_uri(self) -> str:
