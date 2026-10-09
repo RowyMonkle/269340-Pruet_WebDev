@@ -8,6 +8,7 @@ Designed to support the 'Expand and Contract' zero-downtime evolution pattern.
 from sqlalchemy import (
     Column,
     Integer,
+    BigInteger,
     String,
     Numeric,
     DateTime,
@@ -246,3 +247,38 @@ class OutboxEvent(Base):
 
     def __repr__(self):
         return f"<OutboxEvent(id={self.id}, type='{self.event_type}', status='{self.status}')>"
+
+
+class FeatureFlag(Base):
+    """Runtime switch read by every API replica (e.g. dual write, read source)."""
+    __tablename__ = "feature_flags"
+
+    key = Column(String(64), primary_key=True)
+    value = Column(String(64), nullable=False)
+    updated_at = Column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+        onupdate=func.now(),
+        nullable=False,
+    )
+
+    def __repr__(self):
+        return f"<FeatureFlag(key='{self.key}', value='{self.value}')>"
+
+
+class BackfillCheckpoint(Base):
+    """Progress of a resumable backfill job (last processed primary key)."""
+    __tablename__ = "backfill_checkpoints"
+
+    job_name = Column(String(64), primary_key=True)
+    last_id = Column(BigInteger, nullable=False, default=0, server_default="0")
+    rows_done = Column(BigInteger, nullable=False, default=0, server_default="0")
+    updated_at = Column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+        onupdate=func.now(),
+        nullable=False,
+    )
+
+    def __repr__(self):
+        return f"<BackfillCheckpoint(job='{self.job_name}', last_id={self.last_id})>"
