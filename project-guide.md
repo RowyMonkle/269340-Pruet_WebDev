@@ -1,44 +1,4 @@
-# 🛠️ Team Onboarding & Project Setup Guide
-**Project:** 269340 Ticket Booking Platform (Pruet_WebDev)  
-**Target Audience:** All Team Members (Natthakritta, Nannapat, Poonyaporn, Pandara)
-
----
-
-## 📌 1. Overview of the Enhanced Architecture
-
-The Docker setup has been enhanced for high availability, zero-downtime deployments, and automated migrations:
-
-```
-                      ┌───────────────────────────────┐
-                      │    Client / Browser / Apps    │
-                      └──────────────┬────────────────┘
-                                     │ Port 8000
-                                     ▼
-                      ┌───────────────────────────────┐
-                      │   Nginx Reverse Proxy & LB    │
-                      │       (ticweb_nginx)          │
-                      └──────┬─────────────────┬──────┘
-                             │                 │
-               ┌─────────────┴─────┐     ┌─────┴─────────────┐
-               │   API Replica 1   │     │   API Replica 2   │
-               │  (ticweb_api_1)   │     │  (ticweb_api_2)   │
-               │     Port 8001     │     │     Port 8002     │
-               └─────────────┬─────┘     └─────┬─────────────┘
-                             │                 │
-                             ▼                 ▼
-          ┌───────────────────────────┬───────────────────────────┐
-          │   PostgreSQL (Port 5432)  │    MongoDB (Port 27017)   │
-          │     (ticweb_postgres)     │      (ticweb_mongo)       │
-          └───────────────────────────┴───────────────────────────┘
-                                      ▲
-                                      │ One-shot migration before APIs start
-                      ┌───────────────┴───────────────┐
-                      │       ticweb_migrate          │
-                      │    (scripts/migrate.py)       │
-                      └───────────────────────────────┘
-```
-
-### ✨ Key Enhancements:
+### Key Enhancements:
 1. **Automated Schema Migration (`ticweb_migrate`)**:
    - Runs `scripts/migrate.py` automatically on `docker compose up`.
    - Automatically detects whether the database is fresh, initialized via `init.sql`, or already tracked by Alembic, then stamps and upgrades to `head`.
@@ -55,11 +15,7 @@ The Docker setup has been enhanced for high availability, zero-downtime deployme
 
 ---
 
-## 🚀 2. Quick Start for New Members (5 Minutes)
-
-### Prerequisites:
-- [Docker Desktop](https://www.docker.com/products/docker-desktop/) (ensure Docker daemon is running)
-- [Git](https://git-scm.com/)
+## Quick Start
 
 ### Step 1: Clone and Configure `.env`
 ```bash
