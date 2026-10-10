@@ -43,7 +43,7 @@ services:
       POSTGRES_USER: dev_user
       POSTGRES_PASSWORD: dev_password
     ports:
-      - "5432:5432"
+      - "${POSTGRES_PORT:-5432}:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
       - ./init-db:/docker-entrypoint-initdb.d
