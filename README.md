@@ -199,7 +199,7 @@ To guarantee eventual consistency across PostgreSQL and MongoDB:
 - **PyMongo (MongoDB)**: All collection queries use projection dictionaries (e.g. `{"_id": 1, "title": 1, "zones": 1, ...}`) to eliminate document over-fetching over the wire.
 
 ### 4. Zero-Downtime Schema Evolution (Expand and Contract Pattern)
-All database schema alterations avoid table-locking operations:
+Use staged schema changes to reduce disruption; DDL can still acquire table locks. The intended workflow is:
 1. **Expand**: Add new columns with `nullable=True` or safe default values alongside legacy fields.
 2. **Dual Write**: API writes to both legacy and new schema versions concurrently.
 3. **Backfill**: Background worker asynchronously migrates legacy records.
@@ -209,3 +209,77 @@ All database schema alterations avoid table-locking operations:
 ### 5. Git Hygiene & Security
 - Strict `.gitignore` prevents tracking virtual environments (`.venv`), `.env` configuration files, database files (`*.db`, `*.sqlite`), and credentials.
 - Pure ORM queries and parameterized SQL prevent SQL Injection vulnerabilities.
+
+
+## 6. Pandara — CP2 documentation & test client
+
+Open **http://localhost:8000/test-client/** after updating the running API replicas:
+
+```bash
+# Rebuild the shared image, then update replicas one at a time
+docker compose build migrate
+docker compose up -d --no-deps --wait api
+# Allow nginx DNS cache to refresh before updating the second replica
+sleep 6
+docker compose up -d --no-deps --wait api_2
+curl --fail http://localhost:8000/health
+```
+
+This local test client creates real test users, shows the request (password redacted),
+reports HTTP errors, and lists the first ten users. It reads `UserCreate` from
+`/openapi.json`: the split-name option is enabled only when the API explicitly
+advertises both `first_name` and `last_name`. Current API accepts `full_name` only.
+Adding database columns does **not** automatically change the API contract.
+
+### Expand–Contract: five phases and current implementation
+
+The change under preparation is `users.full_name` → `first_name` + `last_name`.
+The five phases below describe the intended process, not a claim that all phases
+are implemented. Source of truth: Alembic revisions, `user_service.py`, and
+`schemas/user.py` in this checkout.
+
+| Phase | Action and exit condition | Current checkout |
+| --- | --- | --- |
+| 1. Expand | Add nullable new columns, retain old column; confirm migration revision and index. | Implemented by `0004_expand_user_names`. |
+| 2. Dual-write | Write both old and new fields; confirm both are populated for new requests on every replica. | Flag storage exists, but user service does not consume it yet. Backend work required. |
+| 3. Backfill | Fill old rows in bounded, resumable batches; verify no missing names and agree on name-splitting rules. | Checkpoint table exists; no backfill runner supplied. Data engineering work required. |
+| 4. Switch-read | Read new fields while preserving the agreed public response; verify old/new clients under traffic and keep rollback available. | Flag exists; read service still selects `full_name`. Backend/API work required. |
+| 5. Contract | Stop legacy writes, remove all legacy dependencies, then remove the old column in a reviewed revision. | No contract revision supplied. Do not drop `full_name` with current API. |
+
+```mermaid
+flowchart LR
+    A[Expand: add nullable columns] --> B[Dual-write: both representations]
+    B --> C[Backfill: batches + verification]
+    C --> D[Switch-read: new names]
+    D --> E[Contract: retire old column]
+    D -. rollback before contract .-> B
+```
+
+`ALTER TABLE` still acquires locks. Nullable columns avoid a table rewrite here;
+`lock_timeout = '3s'` limits waiting, and `CREATE INDEX CONCURRENTLY` reduces
+write blocking during index creation. These measures are not an unconditional
+zero-downtime guarantee: measure real requests while applying the change.
+
+### Commands that exist today
+
+Run from the repository root, with Docker Desktop running:
+
+```bash
+# Start services and run migrations automatically (fresh setup)
+docker compose up --build -d
+# Check actual revision; current checked-in head is 0004_expand_user_names
+docker compose exec api alembic current
+# Apply only pending migrations; at head this is a no-op, not a live migration demo
+docker compose exec api python scripts/migrate.py
+# Inspect columns and count rows still needing migration
+docker compose exec postgres_db psql -U dev_user -d main_db -c "SELECT count(*) AS total, count(*) FILTER (WHERE first_name IS NULL OR last_name IS NULL) AS missing_new_names FROM users;"
+# Inspect runtime flags (substitute your configured local ADMIN_TOKEN)
+curl --fail http://localhost:8000/api/v1/admin/flags -H 'X-Admin-Token: dev-admin-token'
+# Example valid flag endpoint; changing this flag alone does not change current user service behavior
+curl --fail -X PUT http://localhost:8000/api/v1/admin/flags/user_name_write_mode -H 'X-Admin-Token: dev-admin-token' -H 'Content-Type: application/json' -d '{"value":"legacy"}'
+```
+
+Do not run a downgrade or delete volumes just to recreate a demo on an existing
+database. Rehearse pending migrations on a separate disposable setup agreed with
+the backend owner. Commands for backfill and contract must be added when their
+implementations are delivered; no placeholder command is presented as runnable.
