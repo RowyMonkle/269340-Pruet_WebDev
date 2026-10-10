@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="th">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>TicketLab · User test client</title>
+<style>
+:root{font-family:system-ui,sans-serif;color:#182238;background:#f3f5fa}*{box-sizing:border-box}[hidden]{display:none!important}body{margin:0}header{background:#132039;color:white;padding:24px max(6vw,20px)}header small{color:#b8c9e8}main{max-width:1080px;margin:36px auto;padding:0 20px}h1{font-size:30px;margin:8px 0}h2{font-size:20px;margin-top:0}.intro{color:#58657c;line-height:1.7}.grid{display:grid;grid-template-columns:1fr 1fr;gap:24px}.card{background:white;border:1px solid #dfe5ef;border-radius:16px;padding:24px;margin:20px 0;min-width:0}label{display:block;font-size:14px;font-weight:600;margin:16px 0 6px}input,select,button{font:inherit;border-radius:8px;padding:11px;width:100%;border:1px solid #b9c4d6}button{background:#285bd4;color:white;border:0;cursor:pointer;margin-top:18px}button:disabled{opacity:.5;cursor:wait}button.secondary{background:#e9effc;color:#21468c}input:focus-visible,button:focus-visible,select:focus-visible{outline:3px solid #8ab4ff;outline-offset:2px}.row{display:flex;gap:12px}.row>div{flex:1}.badge{font-size:13px;padding:7px 12px;background:#e9effc;color:#24448c;border-radius:20px;display:inline-block}pre{background:#101c30;color:#e0eaff;white-space:pre-wrap;overflow-wrap:anywhere;padding:18px;border-radius:10px;font-size:13px;min-height:80px}.note{font-size:13px;color:#657087;line-height:1.65}#status{line-height:1.6;padding:12px;background:#edf2fa;border-radius:8px}ul{padding-left:20px}li{margin:10px 0;overflow-wrap:anywhere}a{color:#2755b5}@media(max-width:720px){.grid{grid-template-columns:1fr}main{margin-top:20px}.row{display:block}}
+</style>
+</head>
+<body>
+<header><small>269340 / PANDARA · TEST CLIENT</small><h1>TicketLab</h1><div>ทดสอบข้อมูลผู้ใช้ระหว่างการเปลี่ยนโครงสร้างชื่อ</div></header>
+<main>
+<p class="intro">สร้างผู้ใช้ทดสอบและตรวจข้อมูลตอบกลับจาก API จริง ฟอร์มจะตรวจรูปแบบข้อมูลที่ API รองรับก่อนส่ง</p>
+<div class="badge" id="schema">กำลังตรวจ API…</div>
+<div class="grid">
+<section class="card"><h2>สร้างผู้ใช้ทดสอบ</h2>
+<form id="user-form">
+<label for="mode">รูปแบบข้อมูลชื่อ</label><select id="mode"><option value="legacy">ชื่อเต็ม (full_name)</option><option value="split" disabled>ชื่อ / นามสกุล — รอ API รองรับ</option></select>
+<div id="legacy"><label for="full">ชื่อเต็ม</label><input id="full" required minlength="2" maxlength="150" autocomplete="name" placeholder="Pandara Yutiraksa"></div>
+<div id="split" class="row" hidden><div><label for="first">ชื่อ</label><input id="first" maxlength="100" autocomplete="given-name"></div><div><label for="last">นามสกุล</label><input id="last" maxlength="100" autocomplete="family-name"></div></div>
+<label for="email">อีเมล</label><input id="email" type="email" required autocomplete="email" placeholder="pandara@example.com">
+<label for="username">ชื่อผู้ใช้</label><input id="username" required minlength="3" maxlength="50" pattern="[a-zA-Z0-9_-]+" autocomplete="username"><div class="note">ตัวอักษรอังกฤษ ตัวเลข ขีดกลาง และขีดล่าง</div>
+<label for="password">รหัสผ่านทดสอบ</label><input id="password" type="password" required minlength="6" maxlength="72" autocomplete="new-password"><div class="note">อย่างน้อย 6 ตัวอักษร และไม่เกิน 72 ไบต์ UTF-8 ตามข้อจำกัด bcrypt</div>
+<button type="button" id="submit" disabled>สร้างผู้ใช้</button><p class="note">การส่งฟอร์มจะสร้างข้อมูลจริงในฐานข้อมูล local โดยใช้สิทธิ์ fan ไม่มีการบันทึกรหัสผ่านในหน้าผลลัพธ์</p>
+</form></section>
+<section class="card"><h2>ผลการทดสอบ</h2><div id="status" role="status" aria-live="polite">กำลังเชื่อมต่อ…</div><h3>ข้อมูลที่ส่ง</h3><pre id="payload">ยังไม่ได้ส่งข้อมูล</pre><h3>ผลตอบกลับ</h3><pre id="response">ยังไม่มีผลลัพธ์</pre><button id="refresh" class="secondary">โหลดรายชื่อผู้ใช้</button><ul id="users"></ul><p class="note">ตรวจ API เพิ่มเติมได้ที่ <a href="/docs">Swagger UI</a></p></section>
+</div>
+<p class="note">หมายเหตุ: การมีคอลัมน์ใหม่หรือเปลี่ยน feature flag ยังไม่ยืนยันว่า migration ครบทุกระยะ ต้องตรวจ write/read behavior และผล backfill ด้วย</p>
+</main>
+<script src="/test-client/client.js"></script>
+</body></html>

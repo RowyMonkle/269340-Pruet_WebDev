@@ -1,5 +1,7 @@
 import asyncio
 import logging
+from pathlib import Path
+from fastapi.staticfiles import StaticFiles
 from contextlib import asynccontextmanager
 from fastapi import FastAPI, Request, status
 from fastapi.exceptions import RequestValidationError
@@ -143,3 +145,7 @@ def health_check():
             },
         },
     )
+
+
+# Local test client for schema compatibility demonstrations.
+app.mount("/test-client", StaticFiles(directory=Path(__file__).resolve().parents[1] / "frontend", html=True), name="test-client")
