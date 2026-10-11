@@ -94,6 +94,7 @@ All 6 concurrency test scenarios should pass with `6 passed`.
      ```bash
      docker compose exec api alembic upgrade head
      ```
+     > **CP2 warning:** revision `0005_contract_user_full_name` drops `users.full_name`. Do not run `upgrade head` during the demo; `compose up` stops at `0004_expand_user_names` on purpose (`MIGRATE_TARGET`). Apply the contract explicitly with `alembic upgrade 0005_contract_user_full_name` after Phase 4. See `docs/cp2_migration_scenario.md`.
 2. **Feature Flags**:
    - Check if a flag is active:
      ```python

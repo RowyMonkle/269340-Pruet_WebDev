@@ -6,6 +6,10 @@ Handles the three states a database can be in:
      stamped (no alembic_version)         0002 first, then upgrade the rest.
   3. Already tracked by Alembic        -> plain `alembic upgrade head`.
 
+It stops at MIGRATE_TARGET (default: the last non-destructive revision), NOT at
+`head`, so `docker compose up` can never run the CP2 Phase 5 contract revision.
+Apply that one on purpose:  alembic upgrade 0005_contract_user_full_name
+
 Usage: python scripts/migrate.py
 """
 import os
@@ -21,6 +25,8 @@ sys.path.insert(0, ROOT)
 from app.core.config import settings  # noqa: E402
 
 INIT_SQL_REVISION = "0002_add_payments_holds_outbox"
+# 0005 drops users.full_name, so it is never applied automatically
+DEFAULT_TARGET = "0004_expand_user_names"
 
 
 def main() -> None:
@@ -35,8 +41,9 @@ def main() -> None:
         print(f"[migrate] schema from init.sql detected, stamping {INIT_SQL_REVISION}")
         command.stamp(cfg, INIT_SQL_REVISION)
 
-    print("[migrate] upgrading to head")
-    command.upgrade(cfg, "head")
+    target = os.environ.get("MIGRATE_TARGET", DEFAULT_TARGET)
+    print(f"[migrate] upgrading to {target}")
+    command.upgrade(cfg, target)
 
 
 if __name__ == "__main__":
