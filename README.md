@@ -8,9 +8,9 @@ A high-performance, production-grade Dual-Database backend API for concert, musi
 
 | Student ID | Full Name | Role |
 | :--- | :--- | :--- |
-| **670615022** | Natthakritta Aoktan | Backend Lead & Project Management|
+| **670615022** | Natthakritta Aoktan | Backend Lead & Database Architecture |
 | **670615027** | Nannapat Chaipoon | API Engineering & Request Validation |
-| **670615029** | Poonyaporn Intaphrom | Data Engineering & Database Architecture |
+| **670615029** | Poonyaporn Intaphrom | Data Engineering & Project Manager |
 | **670615032** | Pandara Yutiraksa | System Documentation & Frontend design |
 
 ---
