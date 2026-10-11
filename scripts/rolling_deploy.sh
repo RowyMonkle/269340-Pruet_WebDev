@@ -10,8 +10,10 @@ COMPOSE=${COMPOSE:-docker compose}
 # nginx re-resolves replica IPs every 5s (resolver valid=5s in nginx.conf)
 DNS_SETTLE=${DNS_SETTLE:-6}
 
+# Only the "migrate" service has a build section; api and api_2 reuse the same image
+# (ticweb_api:local), so building "api" would say "No services to build" and ship nothing.
 echo "[deploy] building new api image"
-$COMPOSE build api
+$COMPOSE build migrate
 
 for svc in api api_2; do
     echo "[deploy] recreating $svc"
