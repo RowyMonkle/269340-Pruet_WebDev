@@ -1,4 +1,4 @@
-# 269340 Ticket Booking Platform — Checkpoint 1: Core Architecture & Dual-Database Model
+# 269340 Ticket Booking Platform — Checkpoint 1 & 2: Dual-Database Model and Zero-Downtime Migration
 
 A high-performance, production-grade Dual-Database backend API for concert, music event, and festival ticket booking. Built with **FastAPI**, **PostgreSQL** (ACID transactional core state), and **MongoDB** (flexible event catalog & telemetry).
 
@@ -228,7 +228,8 @@ curl --fail http://localhost:8000/health
 This local test client creates real test users, shows the request (password redacted),
 reports HTTP errors, and lists the first ten users. It reads `UserCreate` from
 `/openapi.json`: the split-name option is enabled only when the API explicitly
-advertises both `first_name` and `last_name`. Current API accepts `full_name` only.
+advertises both `first_name` and `last_name`; the current API accepts both shapes
+(`full_name` or `first_name` / `last_name`) on `POST /api/v1/users` and `PUT /api/v1/users/{id}`.
 Adding database columns does **not** automatically change the API contract.
 
 ### Expand–Contract: five phases and current implementation
@@ -241,10 +242,10 @@ are implemented. Source of truth: Alembic revisions, `user_service.py`, and
 | Phase | Action and exit condition | Current checkout |
 | --- | --- | --- |
 | 1. Expand | Add nullable new columns, retain old column; confirm migration revision and index. | Implemented by `0004_expand_user_names`. |
-| 2. Dual-write | Write both old and new fields; confirm both are populated for new requests on every replica. | Flag storage exists, but user service does not consume it yet. Backend work required. |
-| 3. Backfill | Fill old rows in bounded, resumable batches; verify no missing names and agree on name-splitting rules. | Checkpoint table exists; no backfill runner supplied. Data engineering work required. |
-| 4. Switch-read | Read new fields while preserving the agreed public response; verify old/new clients under traffic and keep rollback available. | Flag exists; read service still selects `full_name`. Backend/API work required. |
-| 5. Contract | Stop legacy writes, remove all legacy dependencies, then remove the old column in a reviewed revision. | No contract revision supplied. Do not drop `full_name` with current API. |
+| 2. Dual-write | Write both old and new fields; confirm both are populated for new requests on every replica. | `POST` and `PUT /users` follow flag `user_name_write_mode` (`legacy` / `dual` / `new`). |
+| 3. Backfill | Fill old rows in bounded, resumable batches; verify no missing names and agree on name-splitting rules. | `scripts/backfill.py`: cursor batches of 50, checkpoint in `backfill_checkpoints`, `SKIP LOCKED`, only fills NULL columns. |
+| 4. Switch-read | Read new fields while preserving the agreed public response; verify old/new clients under traffic and keep rollback available. | `GET /users` follows flag `user_name_read_source` (`legacy` / `new`); the response shape is the same either way. |
+| 5. Contract | Stop legacy writes, remove all legacy dependencies, then remove the old column in a reviewed revision. | `0005_contract_user_full_name`: refuses to run unless both flags are `new` and no user lacks `first_name` / `last_name`. Not applied by `docker compose up`. |
 
 ```mermaid
 flowchart LR
@@ -260,26 +261,48 @@ flowchart LR
 write blocking during index creation. These measures are not an unconditional
 zero-downtime guarantee: measure real requests while applying the change.
 
-### Commands that exist today
+### Commands (full 5-phase run)
 
-Run from the repository root, with Docker Desktop running:
+Run from the repository root, with Docker Desktop running. Flag changes reach both
+replicas within `FLAG_CACHE_SECONDS` (2 s).
 
 ```bash
-# Start services and run migrations automatically (fresh setup)
+# Phase 1 Expand: applied by compose (migrate stops at 0004 on purpose, never at "head")
 docker compose up --build -d
-# Check actual revision; current checked-in head is 0004_expand_user_names
-docker compose exec api alembic current
-# Apply only pending migrations; at head this is a no-op, not a live migration demo
-docker compose exec api python scripts/migrate.py
-# Inspect columns and count rows still needing migration
-docker compose exec postgres_db psql -U dev_user -d main_db -c "SELECT count(*) AS total, count(*) FILTER (WHERE first_name IS NULL OR last_name IS NULL) AS missing_new_names FROM users;"
-# Inspect runtime flags (substitute your configured local ADMIN_TOKEN)
+docker compose exec api alembic current                       # 0004_expand_user_names
+docker compose exec api python seed.py
+
+# Baseline + snapshot of existing users, then start the load (leave it running)
+docker compose exec api python scripts/verify_migration.py --stage before-backfill --save-snapshot /tmp/snap.json
+docker compose run --rm --no-deps api python scripts/traffic_gen.py --base-url http://nginx/api/v1 --duration 240
+
+# Phase 2 Dual-write
+curl -X PUT http://localhost:8000/api/v1/admin/flags/user_name_write_mode -H 'X-Admin-Token: dev-admin-token' -H 'Content-Type: application/json' -d '{"value":"dual"}'
+
+# Phase 3 Backfill (resumable; --dry-run only counts)
+docker compose exec api python scripts/backfill.py --dry-run
+docker compose exec api python scripts/backfill.py
+docker compose exec api python scripts/verify_migration.py --stage after-backfill --compare-snapshot /tmp/snap.json
+
+# Phase 4 Switch-read, then stop writing the legacy column
+curl -X PUT http://localhost:8000/api/v1/admin/flags/user_name_read_source -H 'X-Admin-Token: dev-admin-token' -H 'Content-Type: application/json' -d '{"value":"new"}'
+curl -X PUT http://localhost:8000/api/v1/admin/flags/user_name_write_mode -H 'X-Admin-Token: dev-admin-token' -H 'Content-Type: application/json' -d '{"value":"new"}'
+
+# Phase 5 Contract: drops users.full_name. Refuses unless both flags are "new" and every user is migrated
+docker compose exec api alembic upgrade 0005_contract_user_full_name
+docker compose exec api python scripts/verify_migration.py --stage after-contract --compare-snapshot /tmp/snap.json
+
+# Rollback of the contract (re-adds and refills full_name)
+docker compose exec api alembic downgrade 0004_expand_user_names
+
+# Inspect flags
 curl --fail http://localhost:8000/api/v1/admin/flags -H 'X-Admin-Token: dev-admin-token'
-# Example valid flag endpoint; changing this flag alone does not change current user service behavior
-curl --fail -X PUT http://localhost:8000/api/v1/admin/flags/user_name_write_mode -H 'X-Admin-Token: dev-admin-token' -H 'Content-Type: application/json' -d '{"value":"legacy"}'
 ```
 
-Do not run a downgrade or delete volumes just to recreate a demo on an existing
-database. Rehearse pending migrations on a separate disposable setup agreed with
-the backend owner. Commands for backfill and contract must be added when their
-implementations are delivered; no placeholder command is presented as runnable.
+Run the traffic generator in its own container (`run --rm`), not with `exec` inside a replica, so restarting
+a replica (`sh scripts/rolling_deploy.sh`) never kills the load. `traffic_gen.py` exits non-zero if it sees any 5xx, connection failure, unexpected 4xx,
+inconsistent name, p99 >= 500 ms or fewer than 20 req/s, and prints a PASS/FAIL report.
+
+Never run `alembic upgrade head` during the demo: it would apply the contract revision.
+Do not run a downgrade or delete volumes on a database you want to keep; rehearse on a
+disposable setup.
