@@ -4,11 +4,12 @@ from sqlalchemy.orm import Session
 
 from app.core.database import get_db
 from app.schemas.common import PaginatedResponse
-from app.schemas.user import UserCreate, UserResponse
+from app.schemas.user import UserCreate, UserResponse, UserUpdate
 from app.services.user_service import (
     create_user as create_user_svc,
     get_user_by_id as get_user_by_id_svc,
     get_users_paginated,
+    update_user as update_user_svc,
 )
 
 router = APIRouter(prefix="/users", tags=["Users (PostgreSQL)"])
@@ -26,6 +27,24 @@ def create_user(
     db: Session = Depends(get_db),
 ):
     return create_user_svc(db, user_in)
+
+
+@router.put(
+    "/{user_id}",
+    response_model=UserResponse,
+    status_code=status.HTTP_200_OK,
+    summary="Update User",
+    description=(
+        "Update email and/or name. Names may be sent as full_name (legacy) or first_name/last_name; "
+        "both shapes are accepted during the CP2 migration. Fields not sent keep their value."
+    ),
+)
+def update_user(
+    user_id: int,
+    user_in: UserUpdate,
+    db: Session = Depends(get_db),
+):
+    return update_user_svc(db, user_id, user_in)
 
 
 @router.get(

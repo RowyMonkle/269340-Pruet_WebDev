@@ -66,14 +66,17 @@ def test_dual_write_fills_both_sides_for_single_word_full_name():
     assert resolve_user_names(make_user(full_name="Cher"), "dual") == ("Cher", "Cher", "")
 
 
-@pytest.mark.xfail(
-    reason="Known bug (Nannapat): first_name without last_name stores last_name=None; "
-    "it must be '' so the user counts as migrated",
-    strict=True,
-)
-def test_dual_write_single_first_name_stores_empty_last_name():
-    _, _, last = resolve_user_names(make_user(first_name="Cher"), "dual")
-    assert last == ""
+@pytest.mark.parametrize("mode", ["dual", "new"])
+def test_single_first_name_stores_empty_last_name_not_null(mode):
+    # NULL would leave the user "unmigrated" forever and block the Phase 5 guard
+    _, first, last = resolve_user_names(make_user(first_name="Cher"), mode)
+    assert (first, last) == ("Cher", "")
+
+
+def test_first_name_with_matching_full_name_takes_last_name_from_it():
+    assert resolve_user_names(make_user(full_name="John Smith", first_name="John"), "dual") == (
+        "John Smith", "John", "Smith",
+    )
 
 
 def test_user_create_accepts_legacy_and_split_payloads():
