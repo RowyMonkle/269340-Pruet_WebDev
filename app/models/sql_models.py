@@ -18,7 +18,7 @@ from sqlalchemy import (
     Text,
     text,
 )
-from sqlalchemy.orm import relationship
+from sqlalchemy.orm import deferred, relationship
 from sqlalchemy.sql import func
 from app.core.database import Base
 
@@ -31,8 +31,10 @@ class User(Base):
     email = Column(String(255), unique=True, nullable=False)
     username = Column(String(100), unique=True, nullable=False)
     hashed_password = Column(String(255), nullable=False)
-    # Legacy column, kept during the CP2 expand/contract migration (removed in contract)
-    full_name = Column(String(255), nullable=True)
+    # Legacy column, kept during the CP2 expand/contract migration (removed in contract).
+    # deferred: never part of a SELECT unless a query asks for it (load_only), so once
+    # both flags are "new" the code no longer touches it and 0005 can drop it safely.
+    full_name = deferred(Column(String(255), nullable=True))
     first_name = Column(String(100), nullable=True)
     last_name = Column(String(100), nullable=True)
     role = Column(String(50), nullable=False, default="fan", server_default="fan")

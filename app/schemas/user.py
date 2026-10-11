@@ -25,29 +25,41 @@ class UserCreate(UserBase):
 
 
 class UserUpdate(BaseModel):
+    """PUT /users/{id}: send only the fields to change. Accepts the legacy and the split name shape.
+
+    'role' is deliberately not accepted here: the endpoint is public, so it must not
+    be a way to promote an account.
+    """
     email: Optional[EmailStr] = None
     full_name: Optional[str] = Field(None, max_length=150)
     first_name: Optional[str] = Field(None, max_length=100)
     last_name: Optional[str] = Field(None, max_length=100)
-    role: Optional[str] = Field(None, pattern=r"^(fan|organizer|admin)$")
+
+    @model_validator(mode="after")
+    def validate_update(self):
+        if all(v is None for v in (self.email, self.full_name, self.first_name, self.last_name)):
+            raise ValueError("At least one field must be provided.")
+        if self.full_name is not None and not self.full_name.strip():
+            raise ValueError("'full_name' must not be blank.")
+        if self.first_name is not None and not self.first_name.strip():
+            raise ValueError("'first_name' must not be blank.")
+        return self
 
 
-class UserResponse(UserBase):
+class UserResponse(BaseModel):
+    """Response shape. Built by user_service from the active read source.
+
+    Plain str types on purpose: a stored row must never fail response validation
+    (an odd legacy email or a long name would otherwise turn a GET into a 500).
+    """
     id: int
+    email: str
+    username: str
+    full_name: Optional[str] = None
+    first_name: Optional[str] = None
+    last_name: Optional[str] = None
+    role: str
     created_at: datetime
     updated_at: Optional[datetime] = None
 
     model_config = ConfigDict(from_attributes=True)
-
-    @model_validator(mode="after")
-    def ensure_full_name(self):
-        # Fallback to computing full_name if full_name is None in DB (Phase 4/5)
-        if not self.full_name and (self.first_name or self.last_name):
-            parts = [p.strip() for p in (self.first_name, self.last_name) if p and p.strip()]
-            self.full_name = " ".join(parts)
-        elif self.full_name and not self.first_name:
-            # If reading legacy rows that don't have first/last yet
-            parts = self.full_name.strip().split(maxsplit=1)
-            self.first_name = parts[0] if parts else ""
-            self.last_name = parts[1] if len(parts) > 1 else ""
-        return self
