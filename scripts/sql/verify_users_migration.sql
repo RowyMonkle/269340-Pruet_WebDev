@@ -10,6 +10,7 @@
 --   stages  which --stage values run it: before-backfill, after-backfill, after-contract
 --   expect  the number the single value n must equal, or "info" (printed, never fails)
 --   what    what a non-matching result means (one line)
+--   skip_when  optional "flag=value": skip the check while that runtime flag has that value
 -- A block ends at the first line that finishes with a semicolon.
 --
 -- Name rule shared by dual-write, backfill and these queries:
@@ -44,6 +45,7 @@ SELECT count(*) AS n FROM users WHERE full_name IS NULL AND first_name IS NULL;
 -- @name legacy_new_disagree
 -- @stages before-backfill after-backfill
 -- @expect 0
+-- @skip_when user_name_write_mode=new
 -- @what full_name and first_name+last_name are both set but spell different names (whitespace ignored)
 SELECT count(*) AS n
 FROM users

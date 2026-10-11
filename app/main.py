@@ -16,7 +16,9 @@ from app.core.database import (
     check_postgres_connection,
     check_mongo_connection,
 )
-from app.models.sql_models import User, Order, Ticket, Payment, OutboxEvent  # Registers models on Base.metadata
+from app.models.sql_models import (  # noqa: F401  Registers models on Base.metadata
+    User, Order, Ticket, Payment, OutboxEvent, FeatureFlag, BackfillCheckpoint,
+)
 from app.models.nosql_models import init_mongo_indexes
 from app.services.outbox_worker import start_outbox_and_cleanup_worker
 from app.api.v1 import api_v1_router

@@ -40,6 +40,7 @@ class Check:
     expect: str
     what: str
     sql: str
+    skip_when: str = ""  # "flag=value": the check is meaningless while that runtime flag has that value
 
 
 def parse_checks(path: str) -> List[Check]:
@@ -55,7 +56,7 @@ def parse_checks(path: str) -> List[Check]:
     with open(path, encoding="utf-8") as handle:
         for raw in handle:
             line = raw.rstrip()
-            marker = re.match(r"--\s*@(name|stages|expect|what)\s+(.*)$", line)
+            marker = re.match(r"--\s*@(name|stages|expect|what|skip_when)\s+(.*)$", line)
             if marker:
                 key, value = marker.groups()
                 if key == "name":
@@ -73,6 +74,7 @@ def parse_checks(path: str) -> List[Check]:
                         expect=header.get("expect", "info"),
                         what=header.get("what", ""),
                         sql="\n".join(body).rstrip(";"),
+                        skip_when=header.get("skip_when", ""),
                     )
                 )
                 header, body = {}, []
@@ -85,6 +87,19 @@ def by_name(checks: List[Check], name: str) -> Check:
 
 def scalar(conn, check: Check, **params):
     return conn.execute(text(check.sql), params).scalar_one()
+
+
+def should_skip(conn, check: Check) -> Optional[str]:
+    """Return a reason when the check's skip_when flag condition holds right now."""
+    if not check.skip_when:
+        return None
+    key, _, wanted = check.skip_when.partition("=")
+    try:
+        current = conn.execute(text("SELECT value FROM feature_flags WHERE key = :key"), {"key": key}).scalar()
+    except Exception:  # noqa: BLE001 - table missing: nothing to skip
+        conn.rollback()
+        return None
+    return f"{key} is '{current}'" if current == wanted else None
 
 
 def take_snapshot(conn, checks: List[Check]) -> dict:
@@ -129,6 +144,10 @@ def main(argv: Optional[List[str]] = None) -> int:
     with engine.connect() as conn:
         for check in checks:
             if args.stage not in check.stages:
+                continue
+            reason = should_skip(conn, check)
+            if reason:
+                print(f"  SKIP  {check.name:<26} {reason}: legacy full_name is no longer maintained")
                 continue
             value = scalar(conn, check)
             if check.expect == "info":
