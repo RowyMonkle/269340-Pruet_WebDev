@@ -126,3 +126,11 @@ def test_contract_checks_only_run_after_contract():
     # these read users.full_name, so they must never run once it is dropped
     assert "after-contract" not in checks["legacy_new_disagree"].stages
     assert "after-contract" not in checks["users_without_any_name"].stages
+
+
+def test_legacy_new_check_is_skipped_once_legacy_writes_stop():
+    verify = _load_verify_module()
+    checks = {c.name: c for c in verify.parse_checks(verify.SQL_FILE)}
+    # in write mode "new" PUT no longer maintains full_name, so a mismatch is expected there
+    assert checks["legacy_new_disagree"].skip_when == "user_name_write_mode=new"
+    assert checks["not_migrated"].skip_when == ""

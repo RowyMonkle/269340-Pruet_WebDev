@@ -16,6 +16,7 @@ Pre-populates reproducible, realistic dummy records:
   - Event zone booked_count precisely matches active held & valid tickets
 """
 
+import argparse
 import json
 import os
 import sys
@@ -410,7 +411,19 @@ def seed_mongodb_logs(user_ids: list, mongo_events: list, num_logs: int = 1200):
     print(f"--> [MongoDB Total Documents]: {total_mongo} (Events: {len(mongo_events)}, Logs: {len(logs)}) (Target: >= 1,000)")
 
 
+def parse_args(argv=None):
+    parser = argparse.ArgumentParser(description="Seed PostgreSQL and MongoDB with demo data.")
+    parser.add_argument("--users", type=int, default=250,
+                        help="users to create (default 250; use e.g. 5000 so the CP2 backfill runs many batches)")
+    parser.add_argument("--orders", type=int, default=500, help="orders to create (default 500)")
+    args = parser.parse_args(argv)
+    if args.users < 1 or args.orders < 0:
+        parser.error("--users must be >= 1 and --orders >= 0")
+    return args
+
+
 def main():
+    args = parse_args()
     print("=" * 70)
     print("  Ticket Booking Web Application - Database Seeder (Checkpoint 1 & Tier 1)")
     print("=" * 70)
@@ -435,7 +448,7 @@ def main():
     mongo_events = seed_mongodb_events(num_events=200)
 
     # 2. Seed PostgreSQL users, orders, tickets, payments, and outbox events
-    user_ids = seed_postgresql(mongo_events=mongo_events, num_users=250, num_orders=500)
+    user_ids = seed_postgresql(mongo_events=mongo_events, num_users=args.users, num_orders=args.orders)
 
     # 3. Seed MongoDB activity logs referencing real inserted user IDs
     seed_mongodb_logs(user_ids=user_ids, mongo_events=mongo_events, num_logs=1200)

@@ -270,7 +270,7 @@ replicas within `FLAG_CACHE_SECONDS` (2 s).
 # Phase 1 Expand: applied by compose (migrate stops at 0004 on purpose, never at "head")
 docker compose up --build -d
 docker compose exec api alembic current                       # 0004_expand_user_names
-docker compose exec api python seed.py
+docker compose exec api python seed.py --users 5000   # more rows make the backfill run many batches
 
 # Baseline + snapshot of existing users, then start the load (leave it running)
 docker compose exec api python scripts/verify_migration.py --stage before-backfill --save-snapshot /tmp/snap.json
@@ -302,6 +302,9 @@ curl --fail http://localhost:8000/api/v1/admin/flags -H 'X-Admin-Token: dev-admi
 Run the traffic generator in its own container (`run --rm`), not with `exec` inside a replica, so restarting
 a replica (`sh scripts/rolling_deploy.sh`) never kills the load. `traffic_gen.py` exits non-zero if it sees any 5xx, connection failure, unexpected 4xx,
 inconsistent name, p99 >= 500 ms or fewer than 20 req/s, and prints a PASS/FAIL report.
+
+To rehearse on a second copy without touching your dev stack, set the variables listed at the top of
+`docker-compose.yml` (`STACK_PREFIX`, `NGINX_PORT`, `PG_VOLUME`, ...) and add `-p rehearsal` to every `docker compose` command.
 
 Never run `alembic upgrade head` during the demo: it would apply the contract revision.
 Do not run a downgrade or delete volumes on a database you want to keep; rehearse on a
