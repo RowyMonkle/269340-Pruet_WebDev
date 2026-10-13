@@ -34,3 +34,8 @@ Thumbs.db
 # Logs
 *.log
 logs/
+
+# Local notes and packaged submissions never belong in the image
+CLAUDE.md
+.claude/
+*.zip

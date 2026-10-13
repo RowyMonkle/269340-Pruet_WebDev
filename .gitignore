@@ -79,3 +79,9 @@ Thumbs.db
 # Logs
 *.log
 logs/
+
+# Packaged submissions (build them with: git archive -o 269340_CPx.zip HEAD)
+*.zip
+
+# Raw load-test output (final reports go to docs/perf/)
+loadtest/out/
