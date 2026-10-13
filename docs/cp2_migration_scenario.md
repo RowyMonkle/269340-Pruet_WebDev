@@ -17,21 +17,22 @@ signup and login uses, so it must happen while the API keeps taking writes.
 
 | Phase | Action | Flags (`user_name_write_mode` / `user_name_read_source`) | Exit condition | Rollback |
 |---|---|---|---|---|
-| 1 Expand | Alembic `0004_expand_user_names`: add nullable `first_name`, `last_name`, drop NOT NULL on `full_name`, `CREATE INDEX CONCURRENTLY idx_users_last_name` | `legacy` / `legacy` | `alembic current` = 0004; old API still works | `alembic downgrade 0003_feature_flags` |
+| 1 Expand | Alembic `0004_expand_user_names`: add nullable `first_name`, `last_name`, drop NOT NULL on `full_name`, `CREATE INDEX CONCURRENTLY idx_users_last_name` | `legacy` / `legacy` | `alembic current` lists `0006_orders_list_index` (its ancestor is 0004); old API still works | `alembic downgrade 0003_feature_flags` |
 | 2 Dual write | API writes both representations | `dual` / `legacy` | every replica reports `dual`; new signups have all three columns | set write mode back to `legacy` |
 | 3 Backfill | `scripts/backfill.py` fills old rows in batches of 50 to 100 with a checkpoint | `dual` / `legacy` | `verify_migration.py --stage after-backfill` passes | stop the job; re-run resumes from checkpoint |
 | 4 Switch read | API reads `first_name` / `last_name` | `dual` / `new`, then `new` / `new` | 0 errors under `traffic_gen.py`; legacy and new responses agree | set read source back to `legacy` (needs write mode `dual`) |
-| 5 Contract | Alembic `0005_contract_user_full_name` drops `full_name` | `new` / `new` | `verify_migration.py --stage after-contract` passes | `alembic downgrade 0004_expand_user_names` (refills `full_name`) |
+| 5 Contract | Alembic `0005_contract_user_full_name` drops `full_name` | `new` / `new` | `verify_migration.py --stage after-contract` passes | `alembic downgrade 0005_contract_user_full_name@-1` (refills `full_name`, keeps the CP3 index) |
 
 Flags change at runtime, no restart: `PUT /api/v1/admin/flags/{key}` with header
 `X-Admin-Token` and body `{"value": "dual"}`. Replicas pick it up within
 `FLAG_CACHE_SECONDS` (2 s).
 
 ## Rules that keep it zero-downtime
-- `scripts/migrate.py` (run by `docker compose up`) stops at `0004_expand_user_names`.
+- `scripts/migrate.py` (run by `docker compose up`) stops at `0006_orders_list_index` (CP3), which hangs off
+  `0004_expand_user_names` as a second head: it applies the expand step but never the contract.
   The contract revision is never applied by startup. Apply it on purpose:
   `docker compose exec api alembic upgrade 0005_contract_user_full_name`.
-  Do not use `alembic upgrade head` during the demo for the same reason.
+  `alembic upgrade head` refuses to run (two heads), so nobody can drop `full_name` by accident.
 - `0005` refuses to run (drops nothing) unless both flags are `new` and no user is missing
   `first_name` or `last_name`.
 - Deploy order for Phase 5: first ship an API build that no longer reads or writes

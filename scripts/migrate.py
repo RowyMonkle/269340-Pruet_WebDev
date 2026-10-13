@@ -1,13 +1,14 @@
-"""Bring the PostgreSQL schema to Alembic head.
+"""Bring the PostgreSQL schema to the safe Alembic target (see MIGRATE_TARGET below).
 
 Handles the three states a database can be in:
-  1. Empty volume                      -> `alembic upgrade head` builds everything.
+  1. Empty volume                      -> `alembic upgrade <target>` builds everything.
   2. Built by init-db/init.sql, never  -> init.sql matches revision 0002, so stamp
      stamped (no alembic_version)         0002 first, then upgrade the rest.
-  3. Already tracked by Alembic        -> plain `alembic upgrade head`.
+  3. Already tracked by Alembic        -> plain `alembic upgrade <target>`.
 
-It stops at MIGRATE_TARGET (default: the last non-destructive revision), NOT at
-`head`, so `docker compose up` can never run the CP2 Phase 5 contract revision.
+It stops at MIGRATE_TARGET (default: 0006_orders_list_index, the last non-destructive
+revision), NOT at `head` (there are two heads on purpose), so `docker compose up` can never
+run the CP2 Phase 5 contract revision.
 Apply that one on purpose:  alembic upgrade 0005_contract_user_full_name
 
 Usage: python scripts/migrate.py
@@ -25,8 +26,9 @@ sys.path.insert(0, ROOT)
 from app.core.config import settings  # noqa: E402
 
 INIT_SQL_REVISION = "0002_add_payments_holds_outbox"
-# 0005 drops users.full_name, so it is never applied automatically
-DEFAULT_TARGET = "0004_expand_user_names"
+# 0005 drops users.full_name, so it is never applied automatically. 0006 (CP3 index) hangs off
+# 0004 as a second head, so upgrading to it applies everything except the contract.
+DEFAULT_TARGET = "0006_orders_list_index"
 
 
 def main() -> None:

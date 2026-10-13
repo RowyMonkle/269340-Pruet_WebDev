@@ -116,6 +116,8 @@ class Order(Base):
         Index("idx_orders_created_at", created_at.desc()),
         Index("idx_orders_user_status", "user_id", "status"),
         Index("idx_orders_status_expires", "status", "expires_at"),
+        # CP3: orders list (user_id filter, newest first, stable page order) - see migration 0006
+        Index("idx_orders_user_created", "user_id", created_at.desc(), id.desc()),
     )
 
     def __repr__(self):

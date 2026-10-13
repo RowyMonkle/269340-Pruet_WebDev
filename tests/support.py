@@ -1,0 +1,175 @@
+"""Shared helpers for tests/test_concurrency.py and tests/test_consistency.py.
+
+Two ways to reach the API:
+  default              in-process (FastAPI TestClient): fast, needs only the two databases
+  API_URL=http://nginx real HTTP through nginx and BOTH API replicas: the closest thing to
+                       production and the only way to race two separate Python processes.
+                       Example: docker compose exec -e API_URL=http://nginx api pytest tests/test_concurrency.py
+
+Set REQUIRE_DB=1 to turn "databases not reachable" into a failure instead of a silent skip.
+"""
+import concurrent.futures
+import os
+import threading
+import uuid
+from datetime import datetime, timedelta, timezone
+from typing import Callable, Iterable, List, Optional
+
+import pytest
+from bson import ObjectId
+from sqlalchemy import insert, text
+
+from app.core.database import SessionLocal, mongo_db, check_postgres_connection, check_mongo_connection
+from app.models.sql_models import User
+from app.services.user_service import hash_password
+
+API_URL = os.environ.get("API_URL", "").rstrip("/")
+REQUIRE_DB = os.environ.get("REQUIRE_DB", "") == "1"
+
+if API_URL:
+    import httpx
+
+    client = httpx.Client(
+        base_url=API_URL,
+        timeout=60.0,
+        limits=httpx.Limits(max_connections=300, max_keepalive_connections=100),
+    )
+else:
+    from fastapi.testclient import TestClient
+    from app.main import app
+
+    client = TestClient(app)
+
+LIVE_MODE = bool(API_URL)
+
+
+def run_parallel(fn: Callable, items: Iterable, workers: int = 0) -> list:
+    """Call fn(item) for every item at the same instant (barrier) and return results in item order."""
+    items = list(items)
+    barrier = threading.Barrier(len(items))
+
+    def task(item):
+        barrier.wait(timeout=60)
+        return fn(item)
+
+    with concurrent.futures.ThreadPoolExecutor(max_workers=workers or len(items)) as pool:
+        return list(pool.map(task, items))
+
+
+def post_order(user_id: int, event_id: str, zone: str, seats: Optional[List[str]] = None,
+               key: Optional[str] = None, tickets: int = 1):
+    """POST /orders for `seats` (explicit seat numbers) or for `tickets` seatless tickets."""
+    seat_list = seats if seats is not None else [None] * tickets
+    items = [
+        {"event_id": event_id, "seat_zone": zone, **({"seat_number": s} if s else {})} for s in seat_list
+    ]
+    return client.post(
+        "/api/v1/orders",
+        json={"user_id": user_id, "payment_method": "promptpay", "items": items},
+        headers={"Idempotency-Key": key} if key else None,
+    )
+
+
+def build_environment(need_mongo: bool = True):
+    """Create one test user plus the factory helpers; returns (env dict, teardown function).
+
+    Everything created through env is removed by teardown(), in foreign-key order.
+    """
+    ready = check_postgres_connection() and (not need_mongo or check_mongo_connection())
+    if not ready:
+        message = "Databases not accessible for live integration testing."
+        if REQUIRE_DB:
+            pytest.fail(message, pytrace=False)
+        pytest.skip(message)
+
+    password_hash = hash_password("Pass123!")  # hash once, bcrypt is slow on purpose
+    user_ids: List[int] = []
+    event_oids: List[ObjectId] = []
+
+    def make_users(count: int) -> List[int]:
+        rows = [
+            dict(
+                email=f"cp3_{uuid.uuid4().hex[:12]}@example.com",
+                username=f"cp3_{uuid.uuid4().hex[:14]}",
+                hashed_password=password_hash,
+                first_name="Concurrency",
+                last_name=f"Tester{i}",
+                role="fan",
+            )
+            for i in range(count)
+        ]
+        table = User.__table__  # Core insert: never mentions full_name, so it also works after the CP2 contract
+        with SessionLocal() as session:
+            ids = [row[0] for row in session.execute(insert(table).returning(table.c.id), rows)]
+            session.commit()
+        user_ids.extend(ids)
+        return ids
+
+    def track_user(user_id: int) -> None:
+        user_ids.append(user_id)
+
+    def make_event(zones: list) -> str:
+        doc = {
+            "title": f"Test Event {uuid.uuid4().hex[:6]}",
+            "category": "Concert",
+            "artist": {"name": "Test Artist", "genre": "Indie", "bio": ""},
+            "venue": {"name": "Test Stadium", "city": "Bangkok", "capacity": 1000},
+            "date_time": datetime.now(timezone.utc) + timedelta(days=7),
+            "zones": zones,
+            "tags": ["test"],
+            "dynamic_attributes": {},
+            "status": "upcoming",
+            "created_at": datetime.now(timezone.utc),
+        }
+        oid = mongo_db["events"].insert_one(doc).inserted_id
+        event_oids.append(oid)
+        return str(oid)
+
+    def booked(event_id: str, zone_index: int = 0) -> int:
+        doc = mongo_db["events"].find_one({"_id": ObjectId(event_id)}, {"zones": 1})
+        return doc["zones"][zone_index]["booked_count"]
+
+    def scalar(sql: str, **params):
+        with SessionLocal() as session:
+            return session.execute(text(sql), params).scalar()
+
+    def active_tickets(event_id: str) -> int:
+        return scalar("SELECT count(*) FROM tickets WHERE event_id = :e AND status IN ('held', 'valid')", e=event_id)
+
+    def expire_order(order_id: int, minutes: int = 15) -> None:
+        with SessionLocal() as session:
+            session.execute(
+                text("UPDATE orders SET expires_at = :t WHERE id = :o"),
+                {"t": datetime.now(timezone.utc) - timedelta(minutes=minutes), "o": order_id},
+            )
+            session.commit()
+
+    first_user = make_users(1)[0]
+
+    def teardown() -> None:
+        # payments, tickets, outbox and orders reference the users (RESTRICT), so they go first
+        with SessionLocal() as session:
+            order_ids = [r[0] for r in session.execute(
+                text("SELECT id FROM orders WHERE user_id = ANY(:u)"), {"u": user_ids})]
+            if order_ids:
+                session.execute(text("DELETE FROM payments WHERE order_id = ANY(:o)"), {"o": order_ids})
+                session.execute(text("DELETE FROM tickets WHERE order_id = ANY(:o)"), {"o": order_ids})
+                session.execute(text("DELETE FROM outbox_events WHERE aggregate_id = ANY(:o)"),
+                                {"o": [str(o) for o in order_ids]})
+                session.execute(text("DELETE FROM orders WHERE id = ANY(:o)"), {"o": order_ids})
+            session.execute(text("DELETE FROM users WHERE id = ANY(:u)"), {"u": user_ids})
+            session.commit()
+        for oid in event_oids:
+            mongo_db["events"].delete_one({"_id": oid})
+
+    env = {
+        "user_id": first_user,
+        "make_event": make_event,
+        "make_users": make_users,
+        "track_user": track_user,
+        "booked": booked,
+        "active_tickets": active_tickets,
+        "expire_order": expire_order,
+        "scalar": scalar,
+    }
+    return env, teardown

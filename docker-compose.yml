@@ -48,6 +48,9 @@ services:
       POSTGRES_DB: main_db
       POSTGRES_USER: dev_user
       POSTGRES_PASSWORD: dev_password
+    # CP3: preload pg_stat_statements so every normalized query is counted and timed;
+    # read it with scripts/pg_stats.py (DB-side proof of SQL statements per request).
+    command: ["postgres", "-c", "shared_preload_libraries=pg_stat_statements", "-c", "pg_stat_statements.track=all"]
     ports:
       - "${POSTGRES_PORT:-5432}:5432"
     volumes:

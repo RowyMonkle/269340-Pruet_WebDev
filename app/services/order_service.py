@@ -11,10 +11,45 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, joinedload, load_only, selectinload
 from pymongo.database import Database
 
+from app.core.db_errors import conflict_exception, is_retryable_conflict
 from app.models.sql_models import User, Order, Ticket, OutboxEvent
 from app.schemas.order import OrderCreate
 
 logger = logging.getLogger("order_service")
+
+
+def _canonical_event_id(raw_id: str) -> str:
+    """The one spelling of an event id (ObjectId hex is case-insensitive, the unique seat index is not)."""
+    try:
+        return str(ObjectId(raw_id))
+    except InvalidId:
+        return raw_id
+
+
+def _zone_key(zone_name: str) -> str:
+    return zone_name.strip().lower()
+
+
+def _lock_order_key(item: dict) -> tuple:
+    """Sort key giving every order the same seat order: event, zone, then seat."""
+    return (item["event_id"], item["seat_zone"], item["seat_number"] or "")
+
+
+def _release_reservations(events_collection, reserved: list) -> None:
+    """Give back seats reserved in MongoDB for an order that never reached PostgreSQL.
+
+    `reserved` holds (event ObjectId, zone name, number of seats). Best effort: a failure is logged
+    (never raised) so the original error still reaches the client; scripts/verify_consistency.py
+    finds and repairs any seat this could not return.
+    """
+    for ev_oid, z_name, quantity in reserved:
+        try:
+            events_collection.update_one(
+                {"_id": ev_oid, "zones.name": z_name},
+                {"$inc": {"zones.$.booked_count": -quantity}},
+            )
+        except Exception as exc:  # noqa: BLE001
+            logger.error("Could not release %s seat(s) for event %s zone %s: %s", quantity, ev_oid, z_name, exc)
 
 
 def get_order_by_id(db: Session, order_id: int) -> Order:
@@ -45,10 +80,13 @@ def create_order_dual_db(
     1. Check Idempotency-Key: if key already exists, verify payload fingerprint. If payload differs, return 409.
        If identical, return previous order without re-charging or duplicating seats.
     2. Verify customer account in PostgreSQL.
-    3. Verify event and zone in MongoDB, extract authoritative price.
-    4. Atomically reserve seat capacity in MongoDB using $elemMatch and $lt capacity condition.
-    5. Start PostgreSQL transaction: persist Order with 10-minute hold expiry and Tickets with 'held' status.
-    6. Catch concurrent idempotency races and double-booking violations.
+    3. Verify events and zones in MongoDB (one read for all events), extract authoritative prices.
+    4. Atomically reserve seat capacity in MongoDB: ONE conditional update per (event, zone) for the whole
+       quantity (booked_count <= capacity - quantity), all-or-nothing.
+    5. Start PostgreSQL transaction: persist Order with 10-minute hold expiry and Tickets with 'held' status,
+       inserting seats in one global order (event, zone, seat) so concurrent orders cannot deadlock.
+    6. Catch concurrent idempotency races, double-booking violations and database collisions
+       (deadlock / serialization failure -> 409); give the MongoDB seats back on any failure.
     7. Record SEAT_HELD in OutboxEvent table for cross-DB consistency.
     """
     # 1. Idempotency Check
@@ -66,8 +104,10 @@ def create_order_dual_db(
                     status_code=status.HTTP_409_CONFLICT,
                     detail="Idempotency key reused with different request payload (user or item count mismatch).",
                 )
-            existing_items_sig = sorted([(t.event_id, t.seat_zone) for t in existing_order.tickets])
-            request_items_sig = sorted([(item.event_id, item.seat_zone) for item in order_in.items])
+            existing_items_sig = sorted([(t.event_id, _zone_key(t.seat_zone)) for t in existing_order.tickets])
+            request_items_sig = sorted(
+                [(_canonical_event_id(item.event_id), _zone_key(item.seat_zone)) for item in order_in.items]
+            )
             if existing_items_sig != request_items_sig:
                 raise HTTPException(
                     status_code=status.HTTP_409_CONFLICT,
@@ -93,6 +133,23 @@ def create_order_dual_db(
     validated_items = []
     total_amount = Decimal("0.00")
 
+    # One query for every distinct event in the order (no query per ticket)
+    wanted_oids = set()
+    for item in order_in.items:
+        try:
+            wanted_oids.add(ObjectId(item.event_id))
+        except InvalidId:
+            pass  # reported in order below
+    event_docs = {}
+    if wanted_oids:
+        event_docs = {
+            doc["_id"]: doc
+            for doc in events_collection.find(
+                {"_id": {"$in": list(wanted_oids)}},
+                projection={"_id": 1, "title": 1, "zones": 1, "status": 1},
+            )
+        }
+
     for item in order_in.items:
         try:
             event_oid = ObjectId(item.event_id)
@@ -102,10 +159,7 @@ def create_order_dual_db(
                 detail=f"Invalid event ID: {item.event_id}",
             )
 
-        event_doc = events_collection.find_one(
-            {"_id": event_oid},
-            projection={"_id": 1, "title": 1, "zones": 1, "status": 1},
-        )
+        event_doc = event_docs.get(event_oid)
         if not event_doc:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
@@ -132,46 +186,56 @@ def create_order_dual_db(
 
         validated_items.append(
             {
-                "event_id": item.event_id,
+                # canonical spelling: "ABC..." and "abc..." are the same event and must lock the same seat
+                "event_id": str(event_oid),
                 "event_oid": event_oid,
                 "event_title": event_doc.get("title", ""),
                 "seat_zone": matched_zone.get("name"),
-                "seat_number": item.seat_number,
+                "seat_number": (item.seat_number or "").strip() or None,
                 "price": authoritative_price,
                 "capacity": zone_capacity,
             }
         )
 
+    # Concurrency control (pessimistic ordering): every order takes its seats in the same
+    # global order. Two orders that want the same seats in opposite order would otherwise
+    # each hold one unique-index entry and wait for the other (deadlock, HTTP 500).
+    validated_items.sort(key=_lock_order_key)
+
     # 4. Atomic MongoDB Capacity Reservation (prevents overselling)
-    mongo_reserved_zones = []
+    # One conditional update per (event, zone) for ALL the tickets the order takes there: the order
+    # either gets its whole quantity or nothing, so concurrent multi-ticket orders can never block
+    # each other with half-reserved zones, and a 4-ticket order costs one Mongo call, not four.
+    zone_requests = {}
     for v_item in validated_items:
+        key = (v_item["event_oid"], v_item["seat_zone"])
+        request = zone_requests.setdefault(
+            key, {"quantity": 0, "capacity": v_item["capacity"], "title": v_item["event_title"]}
+        )
+        request["quantity"] += 1
+
+    mongo_reserved = []  # (event ObjectId, zone name, seats) taken so far, returned if anything fails
+    for (event_oid, zone_name), request in zone_requests.items():
         update_res = events_collection.update_one(
             {
-                "_id": v_item["event_oid"],
+                "_id": event_oid,
                 "zones": {
                     "$elemMatch": {
-                        "name": v_item["seat_zone"],
-                        "booked_count": {"$lt": v_item["capacity"]},
+                        "name": zone_name,
+                        "booked_count": {"$lte": request["capacity"] - request["quantity"]},
                     }
                 },
             },
-            {"$inc": {"zones.$.booked_count": 1}},
+            {"$inc": {"zones.$.booked_count": request["quantity"]}},
         )
         if update_res.modified_count == 0:
             # Compensate previously reserved zones in this order
-            for ev_oid, z_name in mongo_reserved_zones:
-                try:
-                    events_collection.update_one(
-                        {"_id": ev_oid, "zones.name": z_name},
-                        {"$inc": {"zones.$.booked_count": -1}},
-                    )
-                except Exception:
-                    pass
+            _release_reservations(events_collection, mongo_reserved)
             raise HTTPException(
                 status_code=status.HTTP_409_CONFLICT,
-                detail=f"Zone '{v_item['seat_zone']}' for event '{v_item['event_title']}' is sold out",
+                detail=f"Zone '{zone_name}' for event '{request['title']}' is sold out",
             )
-        mongo_reserved_zones.append((v_item["event_oid"], v_item["seat_zone"]))
+        mongo_reserved.append((event_oid, zone_name, request["quantity"]))
 
     # 5. PostgreSQL Transaction: Order & Ticket Creation with 10-Minute Hold Window
     now = datetime.now(timezone.utc)
@@ -232,14 +296,7 @@ def create_order_dual_db(
     except IntegrityError as iexc:
         db.rollback()
         # Compensate MongoDB reserved seats
-        for ev_oid, z_name in mongo_reserved_zones:
-            try:
-                events_collection.update_one(
-                    {"_id": ev_oid, "zones.name": z_name},
-                    {"$inc": {"zones.$.booked_count": -1}},
-                )
-            except Exception:
-                pass
+        _release_reservations(events_collection, mongo_reserved)
 
         err_str = str(iexc).lower()
 
@@ -262,17 +319,13 @@ def create_order_dual_db(
 
     except Exception as exc:
         db.rollback()
-        for ev_oid, z_name in mongo_reserved_zones:
-            try:
-                events_collection.update_one(
-                    {"_id": ev_oid, "zones.name": z_name},
-                    {"$inc": {"zones.$.booked_count": -1}},
-                )
-            except Exception:
-                pass
+        _release_reservations(events_collection, mongo_reserved)
 
         if isinstance(exc, HTTPException):
             raise exc
+        if is_retryable_conflict(exc):
+            # deadlock / serialization failure / lock timeout: nothing was written, the client retries
+            raise conflict_exception(exc)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Dual-database transaction failed: {str(exc)}",
