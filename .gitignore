@@ -85,3 +85,4 @@ logs/
 
 # Raw load-test output (final reports go to docs/perf/)
 loadtest/out/
+docs/demo.mp4

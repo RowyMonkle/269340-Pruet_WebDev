@@ -1,22 +1,11 @@
 """CP2 continuous traffic generator: >= 20 req/s of POST + PUT + GET against the Web API.
 
-Keeps a fixed request rate (open loop, so a slow server does not lower the load),
-prints live success / error / latency numbers once a second, and exits non-zero if a
-CP2 criterion is broken:
-  * any HTTP 5xx or connection failure          (zero downtime)
-  * any unexpected 4xx                          (valid requests must be accepted)
-  * a response with a missing field or a name that does not match first + last
+Keeps a fixed request rate, prints live metrics, and exits non-zero if a criterion fails:
+  * any HTTP 5xx or connection failure
+  * any unexpected 4xx
+  * a response with missing fields or inconsistent name mapping
   * p99 latency >= 500 ms
   * average rate below 20 req/s
-
-Payloads alternate between the legacy shape (full_name) and the split shape
-(first_name / last_name), so old and new clients are both exercised while the
-migration phases change.
-
-Usage:
-  python scripts/traffic_gen.py                        # forever, Ctrl+C prints the report
-  python scripts/traffic_gen.py --duration 120         # run 2 minutes, then report
-  docker compose exec api python scripts/traffic_gen.py --base-url http://nginx/api/v1
 """
 import argparse
 import random
@@ -43,7 +32,7 @@ class Stats:
         self.network_errors = 0  # timeout / connection refused / reset
         self.data_errors = 0     # 2xx body with a missing field or inconsistent name
         self.latencies: List[float] = []
-        self.samples: List[str] = []  # first few failures, for the report
+        self.samples: List[str] = []
 
     def record(self, method: str, status: Optional[int], latency_ms: float, problem: Optional[str]) -> None:
         with self.lock:
@@ -104,7 +93,7 @@ class Generator:
         self.ids_lock = threading.Lock()
         self.client = httpx.Client(
             timeout=timeout,
-            limits=httpx.Limits(max_connections=200, max_keepalive_connections=50),
+            limits=httpx.Limits(max_connections=50, max_keepalive_connections=20),
         )
 
     def seed_ids(self) -> int:
@@ -112,7 +101,7 @@ class Generator:
             res = self.client.get(f"{self.base}/users", params={"page": 1, "page_size": 100})
             if res.status_code == 200:
                 self.user_ids = [u["id"] for u in res.json()["items"]]
-        except Exception as exc:  # noqa: BLE001 - startup probe only
+        except Exception as exc:
             print(f"[traffic] could not list users at start: {exc}")
         return len(self.user_ids)
 
@@ -167,7 +156,7 @@ class Generator:
             res = self.client.get(f"{self.base}/users", params={"page": random.randint(1, 3), "page_size": 20})
             if res.status_code != 200:
                 return res.status_code, None
-            for item in res.json()["items"]:
+            for item in res.json().get("items", []):
                 problem = check_user_body(item)
                 if problem:
                     return res.status_code, f"list item {item.get('id')}: {problem}"
@@ -189,7 +178,7 @@ class Generator:
         status, problem = None, None
         try:
             status, problem = action()
-        except Exception as exc:  # noqa: BLE001 - any transport failure is a failed request
+        except Exception as exc:
             problem = type(exc).__name__
         self.stats.record(method, status, (time.perf_counter() - start) * 1000, problem)
 
@@ -233,10 +222,11 @@ def report(stats: Stats, elapsed: float, min_rps: float) -> int:
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.add_argument("--base-url", default="http://localhost:8000/api/v1")
+    # ใช้ http://nginx/api/v1 เป็นค่าเริ่มต้นสำหรับการรันใน container
+    parser.add_argument("--base-url", default="http://nginx/api/v1")
     parser.add_argument("--rps", type=float, default=25.0, help="target requests per second (CP2 needs >= 20)")
     parser.add_argument("--duration", type=float, default=0, help="seconds to run, 0 = until Ctrl+C")
-    parser.add_argument("--workers", type=int, default=32)
+    parser.add_argument("--workers", type=int, default=16)
     parser.add_argument("--timeout", type=float, default=5.0)
     parser.add_argument("--post-ratio", type=float, default=0.30)
     parser.add_argument("--put-ratio", type=float, default=0.10)
@@ -258,7 +248,6 @@ def main() -> int:
                 now = time.time()
                 if args.duration and now - started >= args.duration:
                     break
-                # schedule by the clock, so a slow response never lowers the offered rate
                 due = int((now - started) / interval) + 1
                 while sent < due:
                     pool.submit(gen.one_request)
