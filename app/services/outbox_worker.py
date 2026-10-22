@@ -44,28 +44,31 @@ def process_pending_outbox_events(db: Session, mongo_db: Database) -> int:
 
     return processed_count
 
+def run_worker_cycle() -> None:  # ADD: one full sync cycle, moved out of the async loop so it can run in a thread
+    """One reconciliation + outbox pass. Blocking (sync SQLAlchemy / PyMongo), so it must never run on the event loop."""
+    db = SessionLocal()  # MOVED: session is created and closed inside the worker thread
+    try:
+        # 1. Clean up expired seat holds (reconciling PostgreSQL -> MongoDB)
+        cleaned_holds = cleanup_expired_seat_holds(db=db, mongo_db=mongo_db)
+        if cleaned_holds > 0:
+            logger.info(f"Reconciled and released {cleaned_holds} expired seat holds.")
 
+        # 2. Process pending outbox events
+        processed_events = process_pending_outbox_events(db=db, mongo_db=mongo_db)
+        if processed_events > 0:
+            logger.info(f"Processed {processed_events} transactional outbox events.")
+    finally:
+        db.close()
+        
 async def start_outbox_and_cleanup_worker(stop_event: asyncio.Event, poll_interval: int = 15):
     """Background worker continuously running outbox processing and expired seat-hold cleanup."""
     logger.info("Outbox & Seat-Hold Reconciliation Worker started.")
     while not stop_event.is_set():
         try:
-            db = SessionLocal()
-            try:
-                # 1. Clean up expired seat holds (reconciling PostgreSQL -> MongoDB)
-                cleaned_holds = cleanup_expired_seat_holds(db=db, mongo_db=mongo_db)
-                if cleaned_holds > 0:
-                    logger.info(f"Reconciled and released {cleaned_holds} expired seat holds.")
-
-                # 2. Process pending outbox events
-                processed_events = process_pending_outbox_events(db=db, mongo_db=mongo_db)
-                if processed_events > 0:
-                    logger.info(f"Processed {processed_events} transactional outbox events.")
-
-            finally:
-                db.close()
-
-        except Exception as exc:
+            # CHANGE: run the blocking DB work in a thread. Before, a lock wait here froze the whole
+            # event loop, so every request on this replica (even /health) hung until the lock was released.
+            await asyncio.to_thread(run_worker_cycle)
+        except Exception as exc:  # exceptions raised in the thread are re-raised here by await
             logger.error(f"Error in background worker loop: {exc}")
 
         try:

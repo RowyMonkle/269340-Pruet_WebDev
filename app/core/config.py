@@ -26,6 +26,8 @@ class Settings(BaseSettings):
     POSTGRES_DB: str = "main_db"
     POSTGRES_POOL_SIZE: int = 20
     POSTGRES_MAX_OVERFLOW: int = 10
+    POSTGRES_POOL_TIMEOUT: float = 5.0  # seconds to wait for a free pooled connection before 503
+    POSTGRES_STATEMENT_TIMEOUT_MS: int = 0 #per-query timeout in ms
     DATABASE_URL: Optional[str] = None
 
     @property
