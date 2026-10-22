@@ -12,12 +12,17 @@ logger = logging.getLogger(__name__)
 # ==============================================================================
 # PostgreSQL Connection & Session Pool
 # ==============================================================================
+_pg_connect_args = {}
+if settings.POSTGRES_STATEMENT_TIMEOUT_MS > 0: #only set statement_timeout when enabled (0 = off)
+     _pg_connect_args["options"] = f"-c statement_timeout={settings.POSTGRES_STATEMENT_TIMEOUT_MS}"
+
 engine = create_engine(
     settings.sync_database_url,
     pool_size=settings.POSTGRES_POOL_SIZE,
     max_overflow=settings.POSTGRES_MAX_OVERFLOW,
     pool_pre_ping=True,  # Test connection liveness before checkout
     pool_recycle=1800,   # Recycle connections every 30 minutes
+    connect_args=_pg_connect_args, #apply statement_timeout when configured
     echo=False,
 )
 
