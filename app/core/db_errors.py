@@ -14,6 +14,8 @@ import logging
 from typing import Optional
 
 from fastapi import HTTPException, status
+#add : error when pool time out
+from sqlalchemy.exc import TimeoutError as PoolTimeoutError
 
 logger = logging.getLogger("db_errors")
 
@@ -22,7 +24,20 @@ SERIALIZATION_FAILURE = "40001"
 LOCK_NOT_AVAILABLE = "55P03"
 RETRYABLE_PGCODES = frozenset({DEADLOCK_DETECTED, SERIALIZATION_FAILURE, LOCK_NOT_AVAILABLE})
 
+#add statement_timeout
+QUERY_CANCELED = "57014" 
+#when Posgress can't receieve the connection
+TOO_MANY_CONNECTIONS = "53300"
+#Postgres open/close
+CANNOT_CONNECT_NOW = "57P03"
+#respone 503 code error
+UNAVAILABLE_PGCODES = frozenset({QUERY_CANCELED, TOO_MANY_CONNECTIONS, CANNOT_CONNECT_NOW})
+
 CONFLICT_MESSAGE = "The request collided with a concurrent update. Nothing was changed, please retry."
+#msg code 503 error
+UNAVAILABLE_MESSAGE = "The database is busy right now. Nothing was changed, please retry shortly." 
+#client need to wait 2 sec (header Retry-After)
+RETRY_AFTER_SECONDS = 2
 
 
 def pgcode(exc: BaseException) -> Optional[str]:
@@ -33,8 +48,32 @@ def pgcode(exc: BaseException) -> Optional[str]:
 def is_retryable_conflict(exc: BaseException) -> bool:
     return pgcode(exc) in RETRYABLE_PGCODES
 
+#check this is 503 or not
+def is_service_unavailable(exc: BaseException) -> bool:
+    if isinstance(exc, PoolTimeoutError): #check type of exception
+        return True
+    return pgcode(exc) in UNAVAILABLE_PGCODES #error from Posgres when overload
 
 def conflict_exception(exc: BaseException) -> HTTPException:
     """The HTTP 409 to raise for a retryable collision (also logs which code it was)."""
     logger.warning("Retryable database conflict (SQLSTATE %s): answering 409", pgcode(exc))
     return HTTPException(status_code=status.HTTP_409_CONFLICT, detail=CONFLICT_MESSAGE)
+
+#create HTTP 503 with log
+def unavailable_exception(exc: BaseException) -> HTTPException:
+    reason = "pool timeout" if isinstance(exc, PoolTimeoutError) else f"SQLSTATE {pgcode(exc)}"
+    logger.warning("Database unavailable (%s): answering 503", reason)
+    return HTTPException(
+        status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+        detail=UNAVAILABLE_MESSAGE,
+        headers={"Retry-After": str(RETRY_AFTER_SECONDS)},  # HTTP standard : tell ckient that when can retry
+    )
+
+# single entry point for main.py and services to convert a DB error
+def classify_db_error(exc: BaseException) -> Optional[HTTPException]:
+    """Map a database error to the HTTPException to raise, or None if it is a real bug (-> 500)."""  
+    if is_retryable_conflict(exc):
+        return conflict_exception(exc)
+    if is_service_unavailable(exc):
+        return unavailable_exception(exc)
+    return None 
