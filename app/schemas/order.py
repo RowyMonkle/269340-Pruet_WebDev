@@ -51,3 +51,20 @@ class OrderResponse(BaseModel):
     updated_at: Optional[datetime] = None
 
     model_config = ConfigDict(from_attributes=True)
+
+class OrderSummary(BaseModel):  # ADD: DTO projection for summary GET endpoints
+    id: int
+    order_number: str
+    user_id: int
+    status: str
+    total_amount: float
+    ticket_count: int = Field(..., ge=0, description="Number of tickets in this order")
+    paid_amount: float = Field(..., ge=0.0, description="Sum of completed payments for this order")
+    expires_at: Optional[datetime] = None
+    created_at: datetime
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class ErrorResponse(BaseModel):  # ADD: shape of HTTPException body, used in responses= for Swagger
+    detail: str = Field(..., description="Human-readable reason for the error")
