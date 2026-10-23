@@ -54,13 +54,18 @@ def process_order_payment(
     # Check if order is already resolved
     if order.status in ["paid", "confirmed"]:
         raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
+            status_code=status.HTTP_409_CONFLICT, #the request conflicts with the order's current state (e.g. double payment race)
             detail=f"Order {order.order_number} is already paid and confirmed",
         )
-    if order.status in ["expired", "cancelled"]:
+    if order.status == "expired":  
         raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Order {order.order_number} is {order.status} and cannot receive payments",
+            status_code=status.HTTP_410_GONE,  
+            detail=f"Order {order.order_number} has expired and its seats were released. Please place a new order.",
+        )
+    if order.status == "cancelled": 
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,  
+            detail=f"Order {order.order_number} is cancelled and cannot receive payments",
         )
 
     # Check seat hold expiry (10-minute hold window)
@@ -178,4 +183,9 @@ def process_order_payment(
 
 def get_payments_by_order_id(db: Session, order_id: int) -> List[Payment]:
     """Retrieve all payment records for an order."""
+    if db.query(Order.id).filter(Order.id == order_id).first() is None:  # tell "no such order" apart from "no payments yet"
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,  #previously returned 200 with [] for any unknown id
+            detail=f"Order with ID {order_id} not found",
+        )
     return db.query(Payment).filter(Payment.order_id == order_id).order_by(Payment.created_at.desc()).all()

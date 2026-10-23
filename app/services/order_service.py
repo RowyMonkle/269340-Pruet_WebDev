@@ -11,12 +11,13 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, joinedload, load_only, selectinload
 from pymongo.database import Database
 
-from app.core.db_errors import conflict_exception, is_retryable_conflict
+from app.core.db_errors import classify_db_error 
 from app.models.sql_models import User, Order, Ticket, OutboxEvent
 from app.schemas.order import OrderCreate
 
 logger = logging.getLogger("order_service")
-
+#partial unique index that blocks double-booking (see sql_models.Ticket)
+SEAT_UNIQUE_CONSTRAINT = "uq_tickets_event_zone_seat"  
 
 def _canonical_event_id(raw_id: str) -> str:
     """The one spelling of an event id (ObjectId hex is case-insensitive, the unique seat index is not)."""
@@ -34,6 +35,11 @@ def _lock_order_key(item: dict) -> tuple:
     """Sort key giving every order the same seat order: event, zone, then seat."""
     return (item["event_id"], item["seat_zone"], item["seat_number"] or "")
 
+def _violated_constraint(exc: IntegrityError) -> str:  # which constraint an IntegrityError broke
+    """Name of the violated constraint (psycopg2 diag), falling back to the error text."""
+    diag = getattr(getattr(exc, "orig", None), "diag", None) 
+    name = getattr(diag, "constraint_name", None)
+    return (name or str(exc)).lower()  # fallback keeps working if diag is missing
 
 def _release_reservations(events_collection, reserved: list) -> None:
     """Give back seats reserved in MongoDB for an order that never reached PostgreSQL.
@@ -86,7 +92,8 @@ def create_order_dual_db(
     5. Start PostgreSQL transaction: persist Order with 10-minute hold expiry and Tickets with 'held' status,
        inserting seats in one global order (event, zone, seat) so concurrent orders cannot deadlock.
     6. Catch concurrent idempotency races, double-booking violations and database collisions
-       (deadlock / serialization failure -> 409); give the MongoDB seats back on any failure.
+       (deadlock / serialization failure -> 409), pool / statement timeout -> 503); give the MongoDB seats
+       back on any failure.
     7. Record SEAT_HELD in OutboxEvent table for cross-DB consistency.
     """
     # 1. Idempotency Check
@@ -299,6 +306,7 @@ def create_order_dual_db(
         _release_reservations(events_collection, mongo_reserved)
 
         err_str = str(iexc).lower()
+        constraint = _violated_constraint(iexc)
 
         # If concurrent duplicate idempotency key raced, return winning order
         if idempotency_key and ("idempotency_key" in err_str or "uq_orders_idempotency_key" in err_str):
@@ -311,10 +319,19 @@ def create_order_dual_db(
             if winning_order:
                 return winning_order
 
+        if SEAT_UNIQUE_CONSTRAINT in constraint:  # only the seat index means double-booking (was: every IntegrityError)
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="Double-booking prevented: One or more selected seats have already been reserved for this event.",
+            )
+
+        # any other constraint (FK, check, duplicate ticket code...) is a real bug, not a seat race
+        logger.exception("Unexpected integrity error while creating order (constraint: %s)", constraint)
+
         # Otherwise it was a double-booking seat violation
         raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail="Double-booking prevented: One or more selected seats have already been reserved for this event.",
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+             detail="Order could not be created because of a data integrity error. Nothing was saved.",
         )
 
     except Exception as exc:
@@ -323,12 +340,13 @@ def create_order_dual_db(
 
         if isinstance(exc, HTTPException):
             raise exc
-        if is_retryable_conflict(exc):
-            # deadlock / serialization failure / lock timeout: nothing was written, the client retries
-            raise conflict_exception(exc)
+        http_exc = classify_db_error(exc)  # 409 for collisions AND 503 for pool / statement timeout
+        if http_exc is not None:
+            raise http_exc
+        logger.exception("Dual-database transaction failed for user %s", order_in.user_id)  # FIX: moved out of the if and above the raise (was unreachable after `raise http_exc`)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Dual-database transaction failed: {str(exc)}",
+            detail="Dual-database transaction failed. Nothing was saved and the reserved seats were released.",  # no str(exc), internal SQL must not leak
         )
 
     # 6. Telemetry logging to MongoDB 'activity_logs'
