@@ -76,3 +76,36 @@ def test_handler_works_end_to_end_inside_a_fastapi_app():
     response = TestClient(mini).get("/deadlock")
     assert response.status_code == 409
     assert response.json() == {"detail": CONFLICT_MESSAGE}
+
+
+# ---- 503: the database is busy or unreachable (nothing was written, the client retries after a pause) -------------
+
+def test_classify_maps_each_failure_to_the_right_status():
+    from pymongo.errors import AutoReconnect, NetworkTimeout, OperationFailure, ServerSelectionTimeoutError
+    from sqlalchemy.exc import TimeoutError as PoolTimeoutError
+    from app.core.db_errors import RETRY_AFTER_SECONDS, classify_db_error
+
+    expected_409 = [db_error("40P01"), db_error("40001"), db_error("55P03")]            # deadlock, serialization, lock timeout
+    expected_503 = [db_error("57014"), db_error("53300"), db_error("57P03"),             # statement timeout, too many connections, starting up
+                    PoolTimeoutError("QueuePool limit reached"),
+                    ServerSelectionTimeoutError("no mongo"), NetworkTimeout("slow"), AutoReconnect("gone")]
+    for exc in expected_409:
+        assert classify_db_error(exc).status_code == 409, exc
+    for exc in expected_503:
+        result = classify_db_error(exc)
+        assert result.status_code == 503, exc
+        assert result.headers["Retry-After"] == str(RETRY_AFTER_SECONDS)
+    # PostgreSQL itself unreachable: the driver error has no SQLSTATE because no server answered
+    assert classify_db_error(db_error(None)).status_code == 503
+    # a real bug stays a 500: constraint violation, bad SQL, a MongoDB command that is simply wrong
+    assert classify_db_error(db_error("23505")) is None
+    assert classify_db_error(db_error("42P01")) is None
+    assert classify_db_error(OperationFailure("bad command")) is None
+
+
+def test_503_answers_never_leak_database_internals():
+    from sqlalchemy.exc import TimeoutError as PoolTimeoutError
+    from app.core.db_errors import classify_db_error
+
+    detail = classify_db_error(PoolTimeoutError("QueuePool limit of size 20 overflow 10 reached")).detail.lower()
+    assert "queuepool" not in detail and "overflow" not in detail

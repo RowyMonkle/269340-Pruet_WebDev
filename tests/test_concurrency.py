@@ -49,7 +49,9 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from app.core.database import SessionLocal  # noqa: E402
 from app.models.sql_models import Order, OutboxEvent # noqa: E402
-from tests.support import LIVE_MODE, build_environment, client, post_order, run_parallel  # noqa: E402
+from tests.support import (  # noqa: E402
+    LIVE_MODE, build_environment, client, post_order, run_parallel, sweep_expired_holds,
+)
 
 
 @pytest.fixture(scope="module")
@@ -528,15 +530,15 @@ def test_pay_vs_expiry_vs_cleanup_race_releases_each_seat_once(setup_test_enviro
         if kind == "pay":
             return kind, client.post(f"/api/v1/orders/{order['id']}/payments",
                                      json={"amount": order["total_amount"], "provider": "promptpay"})
-        return kind, client.post("/api/v1/orders/cleanup-expired")
+        return kind, sweep_expired_holds()  # raises if the sweeper fails
 
     results = run_parallel(act, jobs)
     pay_codes = [r.status_code for kind, r in results if kind == "pay"]
-    sweep_codes = [r.status_code for kind, r in results if kind == "sweep"]
-    print(f"Pay vs sweep -> payments {sorted(pay_codes)}, sweeps {sorted(sweep_codes)}")
+    swept = [n for kind, n in results if kind == "sweep"]
+    print(f"Pay vs sweep -> payments {sorted(pay_codes)}, holds expired per sweeper {sorted(swept)}")
 
     assert all(c == 410 for c in pay_codes), f"an expired hold must answer 410 Gone, got {pay_codes}" 
-    assert all(c == 200 for c in sweep_codes), f"the sweeper must not fail, got {sweep_codes}"
+    assert len(swept) == 4, "every sweeper must finish without error"
 
     scalar = env["scalar"]
     expired_ids = [o["id"] for o in expiring]
@@ -558,8 +560,8 @@ def test_parallel_cleanup_releases_each_hold_once(setup_test_environment):
     for order in orders:
         env["expire_order"](order["id"])
 
-    responses = run_parallel(lambda _: client.post("/api/v1/orders/cleanup-expired"), range(8))
-    assert all(r.status_code == 200 for r in responses)
+    swept = run_parallel(lambda _: sweep_expired_holds(), range(8))  # 8 sweepers claim rows with SKIP LOCKED
+    assert len(swept) == 8, "every sweeper must finish without error"
 
     assert env["booked"](event_id) == 0, "all 10 seats released, never more than once"
     assert env["active_tickets"](event_id) == 0
