@@ -1,6 +1,7 @@
 from datetime import datetime
 from typing import List, Optional
 from pydantic import BaseModel, Field, ConfigDict
+from app.schemas.errors import ErrorResponse
 
 from app.schemas.payment import PaymentResponse
 
@@ -66,5 +67,3 @@ class OrderSummary(BaseModel):  # ADD: DTO projection for summary GET endpoints
     model_config = ConfigDict(from_attributes=True)
 
 
-class ErrorResponse(BaseModel):  # ADD: shape of HTTPException body, used in responses= for Swagger
-    detail: str = Field(..., description="Human-readable reason for the error")

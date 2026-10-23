@@ -4,7 +4,8 @@ from sqlalchemy.orm import Session
 from pymongo.database import Database
 
 from app.core.database import get_db, get_mongo_db
-from app.schemas.payment import PaymentCreate, PaymentResponse
+from app.schemas.errors import ErrorResponse, ValidationErrorResponse
+from app.schemas.payment import CleanupResponse, PaymentCreate, PaymentResponse
 from app.services.payment_service import (
     process_order_payment,
     get_payments_by_order_id,
@@ -13,6 +14,15 @@ from app.services.order_service import cleanup_expired_seat_holds
 
 router = APIRouter(prefix="/orders", tags=["Payments & Checkout (Relational Billing)"])
 
+ # 400 from the global validation handler in main.py (bad path / body / header)
+VALIDATION_ERROR_RESPONSE = { 
+    400: {"model": ValidationErrorResponse, "description": "Invalid input (e.g. amount <= 0, unknown provider)"},
+}
+ # errors any database-backed endpoint can return (global handlers in main.py)
+DB_ERROR_RESPONSES = { 
+    409: {"model": ErrorResponse, "description": "Concurrent update collided, nothing was changed, retry"},
+    503: {"model": ErrorResponse, "description": "Database busy (pool exhausted / timeout), retry after Retry-After"},
+}
 
 @router.post(
     "/{order_id}/payments",
@@ -25,6 +35,12 @@ router = APIRouter(prefix="/orders", tags=["Payments & Checkout (Relational Bill
         "and activates held tickets to 'valid'. "
         "Returns HTTP 410 Gone if the seat hold has expired."
     ),
+     responses={  #document every error this endpoint can return
+        **VALIDATION_ERROR_RESPONSE,
+        404: {"model": ErrorResponse, "description": "Order not found"},
+        410: {"model": ErrorResponse, "description": "Seat hold expired, the order must be placed again"},
+        **DB_ERROR_RESPONSES,
+    },
 )
 def pay_for_order(
     order_id: int = Path(..., description="PostgreSQL Order ID"),
@@ -46,6 +62,7 @@ def pay_for_order(
     status_code=status.HTTP_200_OK,
     summary="List Order Payments",
     description="Retrieve all payment attempt records associated with an order.",
+    responses={**VALIDATION_ERROR_RESPONSE, **DB_ERROR_RESPONSES}, 
 )
 def list_order_payments(
     order_id: int = Path(..., description="PostgreSQL Order ID"),
@@ -56,6 +73,8 @@ def list_order_payments(
 
 @router.post(
     "/cleanup-expired",
+      # typed response instead of an untyped dict
+    response_model=CleanupResponse,
     status_code=status.HTTP_200_OK,
     summary="Reconcile & Clean Expired Seat Holds (Internal / Cron)",
     description=(
@@ -63,6 +82,7 @@ def list_order_payments(
         "Finds all pending orders whose 10-minute hold window expired, "
         "cancels tickets, and atomically releases held seats back to MongoDB."
     ),
+     responses=DB_ERROR_RESPONSES,
 )
 def trigger_cleanup_expired_holds(
     x_cron_secret: Optional[str] = Header(
@@ -74,8 +94,8 @@ def trigger_cleanup_expired_holds(
     mongo_db: Database = Depends(get_mongo_db),
 ):
     count = cleanup_expired_seat_holds(db=db, mongo_db=mongo_db)
-    return {
-        "status": "success",
-        "message": f"Cleaned up {count} expired order seat holds.",
-        "expired_orders_count": count,
-    }
+    return CleanupResponse(
+         status="success",
+        message=f"Cleaned up {count} expired order seat holds.",
+        expired_orders_count=count,
+    )
