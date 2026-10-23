@@ -7,10 +7,12 @@ from typing import List, Optional
 from bson import ObjectId
 from bson.errors import InvalidId
 from fastapi import HTTPException, status
+from sqlalchemy import func, insert, select, update
 from sqlalchemy.exc import IntegrityError
-from sqlalchemy.orm import Session, joinedload, load_only, selectinload
+from sqlalchemy.orm import Session, joinedload, load_only
 from pymongo.database import Database
 
+from app.core.config import settings
 from app.core.db_errors import classify_db_error 
 from app.models.sql_models import User, Order, Ticket, OutboxEvent
 from app.schemas.order import OrderCreate
@@ -222,27 +224,31 @@ def create_order_dual_db(
         request["quantity"] += 1
 
     mongo_reserved = []  # (event ObjectId, zone name, seats) taken so far, returned if anything fails
-    for (event_oid, zone_name), request in zone_requests.items():
-        update_res = events_collection.update_one(
-            {
-                "_id": event_oid,
-                "zones": {
-                    "$elemMatch": {
-                        "name": zone_name,
-                        "booked_count": {"$lte": request["capacity"] - request["quantity"]},
-                    }
+    try:
+        for (event_oid, zone_name), request in zone_requests.items():
+            update_res = events_collection.update_one(
+                {
+                    "_id": event_oid,
+                    "zones": {
+                        "$elemMatch": {
+                            "name": zone_name,
+                            "booked_count": {"$lte": request["capacity"] - request["quantity"]},
+                        }
+                    },
                 },
-            },
-            {"$inc": {"zones.$.booked_count": request["quantity"]}},
-        )
-        if update_res.modified_count == 0:
-            # Compensate previously reserved zones in this order
-            _release_reservations(events_collection, mongo_reserved)
-            raise HTTPException(
-                status_code=status.HTTP_409_CONFLICT,
-                detail=f"Zone '{zone_name}' for event '{request['title']}' is sold out",
+                {"$inc": {"zones.$.booked_count": request["quantity"]}},
             )
-        mongo_reserved.append((event_oid, zone_name, request["quantity"]))
+            if update_res.modified_count == 0:
+                raise HTTPException(
+                    status_code=status.HTTP_409_CONFLICT,
+                    detail=f"Zone '{zone_name}' for event '{request['title']}' is sold out",
+                )
+            mongo_reserved.append((event_oid, zone_name, request["quantity"]))
+    except Exception:
+        # sold out in a later zone, or MongoDB became unreachable half way: give back the zones already taken
+        # (the error then propagates: 409 for sold out, 503 for an unreachable MongoDB)
+        _release_reservations(events_collection, mongo_reserved)
+        raise
 
     # 5. PostgreSQL Transaction: Order & Ticket Creation with 10-Minute Hold Window
     now = datetime.now(timezone.utc)
@@ -372,63 +378,105 @@ def create_order_dual_db(
     return new_order
 
 
-def cleanup_expired_seat_holds(db: Session, mongo_db: Database) -> int:
-    """Find all expired pending orders and release their held seats in MongoDB.
+def _release_counted_seats(mongo_db: Database, groups: dict) -> None:
+    """Give seats back in MongoDB: one update per (event, zone) with the number of seats, not one per ticket.
 
-    Cross-DB Reconciliation with Drift Protection:
-    - Uses with_for_update(skip_locked=True) to avoid conflicting with orders actively being paid.
-    - Commits PostgreSQL status updates FIRST.
-    - Releases MongoDB capacity ONLY with booked_count > 0 guard, logging any failures.
+    The guard `booked_count >= n` keeps a counter from going negative. If the counter is already lower
+    than n (drift), fall back to releasing one seat at a time while the counter stays above zero.
     """
+    for (event_id, zone_name), quantity in groups.items():
+        try:
+            oid = ObjectId(event_id)
+            result = mongo_db["events"].update_one(
+                {"_id": oid, "zones": {"$elemMatch": {"name": zone_name, "booked_count": {"$gte": quantity}}}},
+                {"$inc": {"zones.$.booked_count": -quantity}},
+            )
+            if result.modified_count:
+                continue
+            for _ in range(quantity):
+                mongo_db["events"].update_one(
+                    {"_id": oid, "zones": {"$elemMatch": {"name": zone_name, "booked_count": {"$gt": 0}}}},
+                    {"$inc": {"zones.$.booked_count": -1}},
+                )
+        except Exception as exc:  # noqa: BLE001 - logged; scripts/verify_consistency.py --repair finds any seat left over
+            logger.error(f"Failed to release {quantity} seat(s) in MongoDB for event {event_id} zone {zone_name}: {exc}")
+
+
+def _sweep_one_batch(db: Session, mongo_db: Database, batch_size: int) -> int:
+    """Expire up to batch_size overdue holds in ONE short PostgreSQL transaction, then release their seats."""
     now = datetime.now(timezone.utc)
-    expired_orders = (
-        db.query(Order)
-        .options(selectinload(Order.tickets))
-        .filter(Order.status == "pending", Order.expires_at < now)
+    # Claim rows nobody else holds (SKIP LOCKED: never wait for an order that is being paid right now)
+    claimed = db.execute(
+        select(Order.id, Order.order_number)
+        .where(Order.status == "pending", Order.expires_at < now)
+        .order_by(Order.id)
+        .limit(batch_size)
         .with_for_update(of=Order, skip_locked=True)
-        .all()
+    ).all()
+    if not claimed:
+        db.rollback()
+        return 0
+    order_ids = [row.id for row in claimed]
+
+    # How many seats each (event, zone) gets back: counted in SQL, not by looping over tickets in Python
+    groups = {
+        (row.event_id, row.seat_zone): row.n
+        for row in db.execute(
+            select(Ticket.event_id, Ticket.seat_zone, func.count().label("n"))
+            .where(Ticket.order_id.in_(order_ids), Ticket.status == "held")
+            .group_by(Ticket.event_id, Ticket.seat_zone)
+        )
+    }
+
+    db.execute(update(Order).where(Order.id.in_(order_ids)).values(status="expired").execution_options(synchronize_session=False))
+    db.execute(
+        update(Ticket)
+        .where(Ticket.order_id.in_(order_ids), Ticket.status == "held")
+        .values(status="cancelled")
+        .execution_options(synchronize_session=False)
+    )
+    db.execute(
+        insert(OutboxEvent),
+        [
+            {
+                "event_type": "SEAT_HOLD_EXPIRED",
+                "aggregate_id": str(row.id),
+                "payload": json.dumps({"order_id": row.id, "order_number": row.order_number, "reason": "cron_cleanup"}),
+                "status": "pending",
+            }
+            for row in claimed
+        ],
     )
 
-    if not expired_orders:
-        return 0
-
-    to_release = []
-    cleaned_count = 0
-
-    for order in expired_orders:
-        order.status = "expired"
-        for ticket in order.tickets:
-            ticket.status = "cancelled"
-            to_release.append((ticket.event_id, ticket.seat_zone))
-
-        outbox = OutboxEvent(
-            event_type="SEAT_HOLD_EXPIRED",
-            aggregate_id=str(order.id),
-            payload=json.dumps({"order_id": order.id, "order_number": order.order_number, "reason": "cron_cleanup"}),
-            status="pending",
-        )
-        db.add(outbox)
-        cleaned_count += 1
-
-    # 1. Commit PostgreSQL transaction FIRST to ensure consistency
+    # 1. Commit PostgreSQL FIRST so the database of record is right even if MongoDB fails below
     db.commit()
+    # 2. Then release the seats in MongoDB
+    _release_counted_seats(mongo_db, groups)
+    return len(order_ids)
 
-    # 2. Release seats in MongoDB with booked_count > 0 guard
-    for ev_id, z_name in to_release:
-        try:
-            mongo_db["events"].update_one(
-                {
-                    "_id": ObjectId(ev_id),
-                    "zones": {
-                        "$elemMatch": {
-                            "name": z_name,
-                            "booked_count": {"$gt": 0},
-                        }
-                    },
-                },
-                {"$inc": {"zones.$.booked_count": -1}},
-            )
-        except Exception as exc:
-            logger.error(f"Failed to release seat in MongoDB for event {ev_id} zone {z_name}: {exc}")
 
-    return cleaned_count
+def cleanup_expired_seat_holds(
+    db: Session,
+    mongo_db: Database,
+    batch_size: Optional[int] = None,
+    max_batches: Optional[int] = None,
+) -> int:
+    """Find overdue pending orders and release their held seats in MongoDB. Returns how many orders were expired.
+
+    Cross-DB Reconciliation with Drift Protection:
+    - Works in batches (SWEEP_BATCH_SIZE orders per transaction, at most SWEEP_MAX_BATCHES per call), so a flash
+      sale that leaves thousands of holds behind never means one transaction holding thousands of row locks
+      or one call that runs for minutes; the next call continues.
+    - SKIP LOCKED avoids conflicting with orders actively being paid.
+    - Commits PostgreSQL status updates FIRST.
+    - Releases MongoDB capacity with one grouped update per (event, zone) and a booked_count guard, logging failures.
+    """
+    batch_size = batch_size or settings.SWEEP_BATCH_SIZE
+    max_batches = max_batches or settings.SWEEP_MAX_BATCHES
+    total = 0
+    for _ in range(max_batches):
+        done = _sweep_one_batch(db, mongo_db, batch_size)
+        total += done
+        if done < batch_size:
+            break
+    return total

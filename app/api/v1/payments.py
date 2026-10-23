@@ -1,5 +1,5 @@
-from typing import List, Optional
-from fastapi import APIRouter, Depends, Header, Path, status
+from typing import List
+from fastapi import APIRouter, Depends, Path, status
 from sqlalchemy.orm import Session
 from pymongo.database import Database
 
@@ -83,18 +83,15 @@ def list_order_payments(
     status_code=status.HTTP_200_OK,
     summary="Reconcile & Clean Expired Seat Holds (Internal / Cron)",
     description=(
-        "Internal reconciliation endpoint for background cron or worker. "
-        "Finds all pending orders whose 10-minute hold window expired, "
-        "cancels tickets, and atomically releases held seats back to MongoDB."
+        "INTERNAL. Not reachable through the nginx gateway (nginx answers 404): the background worker already "
+        "runs this every 15 s on every replica. Reach it only on a replica's debug port. "
+        "Finds pending orders whose 10-minute hold window expired, cancels tickets, and releases held seats "
+        "back to MongoDB, in batches (SWEEP_BATCH_SIZE orders per transaction, SWEEP_MAX_BATCHES per call)."
     ),
+    include_in_schema=False,  # keep it out of the public Swagger page
     responses=DB_ERROR_RESPONSES,
 )
 def trigger_cleanup_expired_holds(
-    x_cron_secret: Optional[str] = Header(
-        None,
-        alias="X-Cron-Secret",
-        description="Optional internal secret for cron/worker authentication",
-    ),
     db: Session = Depends(get_db),
     mongo_db: Database = Depends(get_mongo_db),
 ):
