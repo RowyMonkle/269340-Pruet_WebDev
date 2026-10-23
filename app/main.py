@@ -9,6 +9,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from sqlalchemy.exc import DBAPIError
 from sqlalchemy.exc import TimeoutError as PoolTimeoutError
+from pymongo.errors import ConnectionFailure as MongoConnectionFailure
 
 from app.core.config import settings
 from app.core.db_errors import classify_db_error # to decide 409 / 503 / real bug 
@@ -110,6 +111,7 @@ async def validation_exception_handler(request: Request, exc: RequestValidationE
 # lock timeout. Nothing was written, so the client gets HTTP 409 and retries, never a 500.
 @app.exception_handler(DBAPIError)
 @app.exception_handler(PoolTimeoutError) 
+@app.exception_handler(MongoConnectionFailure)  # MongoDB down / unreachable: 503 + Retry-After, not a bare 500
 async def retryable_db_conflict_handler(request: Request, exc: Exception): #can handles 409 and 500
     http_exc = classify_db_error(exc) #ask db_errors which status this is (logs the SQLSTATE / reason itself)
     if http_exc is None:

@@ -3,6 +3,7 @@
 # always has one healthy replica to send traffic to.
 #
 # Usage: sh scripts/rolling_deploy.sh
+#        SKIP_MIGRATE=1 sh scripts/rolling_deploy.sh      # code only, no migration step
 #        COMPOSE="docker compose -p other" sh scripts/rolling_deploy.sh
 set -eu
 
@@ -14,6 +15,13 @@ DNS_SETTLE=${DNS_SETTLE:-6}
 # (ticweb_api:local), so building "api" would say "No services to build" and ship nothing.
 echo "[deploy] building new api image"
 $COMPOSE build migrate
+
+# Schema first (expand-only and idempotent: scripts/migrate.py stops before the destructive CP2 contract), then code.
+# The running replicas keep serving: every revision it applies is backward compatible with the old code.
+if [ "${SKIP_MIGRATE:-0}" != "1" ]; then
+    echo "[deploy] applying pending migrations"
+    $COMPOSE run --rm --no-deps migrate
+fi
 
 for svc in api api_2; do
     echo "[deploy] recreating $svc"
