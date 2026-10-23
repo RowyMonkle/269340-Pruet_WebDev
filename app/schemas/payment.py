@@ -21,3 +21,9 @@ class PaymentResponse(BaseModel):
     updated_at: Optional[datetime] = None
 
     model_config = ConfigDict(from_attributes=True)
+
+ # response_model for POST /orders/cleanup-expired (it returned an untyped dict)
+class CleanupResponse(BaseModel): 
+    status: str = Field(..., description="'success' when the reconciliation pass finished") 
+    message: str = Field(..., description="Human-readable summary of the pass")
+    expired_orders_count: int = Field(..., ge=0, description="Pending orders whose seat hold expired and were released")  
