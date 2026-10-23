@@ -32,7 +32,9 @@ random.seed(42)
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from sqlalchemy import func, text
-from app.core.database import Base, engine, SessionLocal, mongo_db, check_postgres_connection, check_mongo_connection
+from app.core.database import (
+    Base, engine, SessionLocal, mongo_db, check_postgres_connection, check_mongo_connection, relax_timeouts_for_scripts,
+)
 from app.models.sql_models import User, Order, Ticket, Payment, OutboxEvent
 from app.models.nosql_models import init_mongo_indexes
 from app.services.user_service import hash_password
@@ -424,6 +426,7 @@ def parse_args(argv=None):
 
 def main():
     args = parse_args()
+    relax_timeouts_for_scripts()  # seeding thousands of rows is not an API request: no 15 s statement limit
     print("=" * 70)
     print("  Ticket Booking Web Application - Database Seeder (Checkpoint 1 & Tier 1)")
     print("=" * 70)

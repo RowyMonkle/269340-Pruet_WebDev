@@ -196,7 +196,9 @@ def main(argv=None) -> int:
                         help="set Mongo booked_count to the PostgreSQL ticket count for drifted zones (stop traffic first)")
     args = parser.parse_args(argv)
 
-    from app.core.database import engine, mongo_db  # imported late so --help works without a database
+    from app.core.database import engine, mongo_db, relax_timeouts_for_scripts  # imported late so --help works without a database
+
+    relax_timeouts_for_scripts()  # an audit over millions of rows must not be cancelled by the API's 15 s statement limit
 
     print("[consistency] PostgreSQL vs MongoDB audit")
     results, drift = run_audit(engine, mongo_db, args.wait, args.retries)

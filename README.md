@@ -169,11 +169,15 @@ What each one proves, and which mechanism it protects, is listed in [section 7.2
 | `GET` | `/api/v1/events/{id}` | MongoDB | `200`, `404` | Fetch single event document by its ObjectId |
 | `GET` | `/api/v1/products` | MongoDB | `200` | Catalog alias for /events |
 | `POST` | `/api/v1/products` | MongoDB | `201` | Catalog alias for /events |
-| `POST` | `/api/v1/orders` | Dual-DB | `201`, `400`, `409` | Atomic checkout with 10-min seat hold, `Idempotency-Key` header support |
+| `POST` | `/api/v1/orders` | Dual-DB | `201`, `400`, `404`, `409`, `503` | Atomic checkout with 10-min seat hold, `Idempotency-Key` header support |
+| `GET` | `/api/v1/orders/summary?user_id=&limit=&offset=` | PostgreSQL | `200`, `404` | Newest-first order summaries with `ticket_count` and `paid_amount` computed in SQL, paginated |
+| `GET` | `/api/v1/orders/{id}/summary` | PostgreSQL | `200`, `404` | One order summary without tickets or payments |
 | `GET` | `/api/v1/orders/{id}`| PostgreSQL | `200`, `404` | Fetch order details with associated tickets and payments (joinedload) |
-| `POST` | `/api/v1/orders/{id}/payments` | PostgreSQL | `201`, `400` | Process payment, confirm order, activate tickets (`held` $\rightarrow$ `valid`) |
+| `POST` | `/api/v1/orders/{id}/payments` | PostgreSQL | `201`, `400`, `404`, `409`, `410`, `503` | Process payment, confirm order, activate tickets (`held` $\rightarrow$ `valid`); `409` already paid / cancelled, `410` hold expired |
 | `GET` | `/api/v1/orders/{id}/payments` | PostgreSQL | `200`, `404` | List payment transaction attempts for an order |
-| `POST` | `/api/v1/orders/cleanup-expired` | Dual-DB | `200` | Reconcile and release expired seat holds back to MongoDB |
+| `POST` | `/api/v1/orders/cleanup-expired` | Dual-DB | `200` | **Internal**: nginx answers `404`, not in Swagger. The background worker runs it every 15 s on every replica |
+
+`409` means the request collided with a concurrent update and nothing was changed: retry. `503` means the database is busy or unreachable and nothing was changed: retry after the `Retry-After` header (2 s).
 
 ---
 
@@ -319,8 +323,8 @@ has an owner, file names and an acceptance test in 7.6.
 
 | Pts | Requirement (CP3 spec) | Owner | Status |
 | ---: | --- | --- | --- |
-| 35 | Concurrency control (optimistic **or** pessimistic) proven by `test_concurrency.py` | Natthakritta | **Done.** Pessimistic locking + atomic seat counters, 20 tests (7.2, 7.3) |
-| 35 | Query projection and zero N+1 on list endpoints | Nannapat (endpoints), Natthakritta (index, DB statistics) | DB side **Done**. **TODO:** the orders list and the events list must become projections (7.6) |
+| 35 | Concurrency control (optimistic **or** pessimistic) proven by `test_concurrency.py` | Natthakritta | **Done.** Pessimistic locking + atomic seat counters, `test_concurrency.py` (22 tests), a limit on every wait (7.2, 7.3, 7.9) |
+| 35 | Query projection and zero N+1 on list endpoints | Nannapat (endpoints), Natthakritta (index, DB statistics) | DB side **Done**. Order summaries: `GET /orders/summary` (section 4). Open items for the list endpoints: 7.6 |
 | 20 | Load test: >= 50 VUs, 3 min, p95 < 200 ms, p99 < 500 ms, errors < 1 % | Poonyaporn | **TODO.** The backend already passes a throwaway profile (7.7) |
 | 10 | `Performance_Audit_Report.pdf` (or a README section) + defence | Pandara (report), everyone (defence) | **TODO** |
 
@@ -360,7 +364,7 @@ sequenceDiagram
 | An order (`orders` row) | double payment; pay vs expiry vs sweeper | **pessimistic lock** `SELECT ... FOR UPDATE` on the order row; sweeper and outbox worker use `SKIP LOCKED` | `payment_service.process_order_payment`, `order_service.cleanup_expired_seat_holds`, `outbox_worker` | `test_paying_twice_fails_with_400`, `test_parallel_payments_charge_the_order_once`, `test_pay_vs_expiry_vs_cleanup_race_releases_each_seat_once`, `test_parallel_cleanup_releases_each_hold_once` |
 | A retried request | the same request twice or 20 times at once | unique `Idempotency-Key` plus a fingerprint of user, event, zone | `order_service` | `test_idempotency_order_placement`, `test_idempotency_payload_mismatch`, `test_parallel_same_idempotency_key_creates_one_order`, `test_idempotent_replay_works_with_any_zone_spelling` |
 | A user row | read-modify-write of names / e-mail | `SELECT ... FOR UPDATE` in `PUT /users/{id}`; unique e-mail answers 409 | `user_service.update_user` | `test_concurrent_user_updates_do_not_lose_each_other` |
-| Anything that still collides | PostgreSQL aborts one side (deadlock, serialization failure, lock timeout) | answered **409**, seats given back, never 500 | `app/core/db_errors.py`, handler in `app/main.py` | `test_database_deadlock_is_answered_with_409_and_seats_are_returned`, `tests/test_db_errors.py` |
+| Anything that still collides | PostgreSQL aborts one side (deadlock, serialization failure) or a lock wait runs past `lock_timeout` (5 s) | answered **409**, seats given back, never 500 | `app/core/db_errors.py`, handler in `app/main.py` | `test_database_deadlock_is_answered_with_409_and_seats_are_returned`, `tests/test_db_errors.py`, `test_a_stuck_row_lock_answers_409_after_lock_timeout_and_frees_the_request` |
 
 **Rules every new write path must follow**
 
@@ -370,9 +374,11 @@ sequenceDiagram
    Why: an upper-case event id used to bypass the seat lock and sell one seat twice.
 3. **Reserve in MongoDB first, then write PostgreSQL, and give the seats back on any failure.** A crash between the two leaves a seat that nobody holds (a lost sale), never an oversell.
    `scripts/verify_consistency.py` finds it and `--repair` fixes it.
-4. **A collision is a 409, never a 5xx.** Use `app/core/db_errors.py` (`is_retryable_conflict`, `conflict_exception`). The global handler turns SQLSTATE `40P01`, `40001`, `55P03` into 409 for every endpoint.
+4. **A collision is a 409 and an overload is a 503, never a 500.** Use `classify_db_error` from `app/core/db_errors.py`. The global handler turns SQLSTATE `40P01`, `40001`, `55P03` into 409 and SQLSTATE `57014` (statement timeout), `53300`, `57P03`, an exhausted connection pool and an unreachable MongoDB into 503 + `Retry-After`, for every endpoint.
 5. **No query inside a per-ticket or per-row loop.** One `$in` read, one update per zone, one SELECT per list.
-6. **Status codes:** a successful booking is `201` (resource created; the spec's sample script says 200), a lost race is `409`, "already paid" is `400`, an expired hold is `410`.
+6. **Status codes:** a successful booking is `201` (resource created; the spec's sample script says 200), a lost race is `409`, "already paid" is `409`, an expired hold is `410`, a busy or unreachable database is `503` with `Retry-After`.
+7. **Every wait has a limit** (section 7.9): a connection from the pool 5 s, a lock 5 s, a statement 15 s, MongoDB 1 s. Anything that can wait forever lets one stuck row take every endpoint down.
+8. **Background work runs in a thread, in batches, with `SKIP LOCKED`.** The worker never blocks the event loop and never holds thousands of row locks in one transaction.
 
 ### 7.3 Prove it (commands)
 
@@ -393,10 +399,13 @@ docker compose exec api python scripts/verify_consistency.py --repair   # resets
 
 | File | Tests | Needs | What it proves |
 | --- | ---: | --- | --- |
-| `tests/test_concurrency.py` | 20 | PostgreSQL + MongoDB | every row of the table in 7.2 (3 tests inspect the server process and run in-process only) |
+| `tests/test_concurrency.py` | 22 | PostgreSQL + MongoDB | every row of the table in 7.2 (3 tests inspect the server process and run in-process only) |
 | `tests/test_consistency.py` | 8 | PostgreSQL + MongoDB | `verify_consistency.py` passes on honest data and catches drift, overselling, double charge, dead orders |
-| `tests/test_db_errors.py` | 14 | none | SQLSTATE to HTTP 409 mapping |
+| `tests/test_resilience.py` | 24 | PostgreSQL + MongoDB | section 7.9: a stuck lock, a busy pool, a dead MongoDB, the sweeper, the outbox, the worker, nginx (real mechanisms, not faked errors) |
+| `tests/test_db_errors.py` | 16 | none | SQLSTATE and driver errors to HTTP 409 / 503 mapping |
 | `tests/test_users_api.py`, `test_user_migration.py`, `test_cp2_scripts.py` | 61 | mostly none | CP2 (dual-write, backfill, traffic generator) |
+
+In total 131 tests: 130 pass in-process, 1 more runs only through nginx (`API_URL=http://nginx`).
 
 `tests/support.py` holds the helpers (client, users and events factory, parallel runner, cleanup). New tests should use it.
 `python tests/test_concurrency.py` runs the concurrency file as a script, like the example in the spec.
@@ -439,7 +448,9 @@ docker compose exec api python scripts/pg_stats.py --like "FROM orders" --csv do
 
 **Capacity** (so nobody has to guess): each replica has a PostgreSQL pool of 20 + 10 overflow (`POSTGRES_POOL_SIZE`, `POSTGRES_MAX_OVERFLOW`), a MongoDB pool of 50,
 and 40 worker threads for the synchronous endpoints; PostgreSQL allows 100 connections. At 50 VUs about 25 requests are in flight per replica and no pool timeout was seen.
-Beyond about 60 requests in flight (2 x 30 connections) requests wait for a connection: raise the two pool variables and PostgreSQL's `max_connections`.
+Beyond about 60 requests in flight (2 x 30 connections) a request waits for a connection for at most `POSTGRES_POOL_TIMEOUT` (5 s) and then gets `503` + `Retry-After`: raise the two pool variables and PostgreSQL's `max_connections`.
+
+**Heavy scripts and the API have different limits.** The 5 s lock / 15 s statement limits protect the web API only. `seed.py` and `scripts/verify_consistency.py` call `relax_timeouts_for_scripts()` so a long statement is not cancelled; `backfill.py` and `pg_stats.py` use their own connections.
 
 **Rehearse without touching your dev stack:** set the variables listed at the top of `docker-compose.yml` (`STACK_PREFIX`, `NGINX_PORT`, `PG_VOLUME`, ...) and add `-p rehearsal` to every `docker compose` command.
 
@@ -465,6 +476,8 @@ def count(conn, cursor, statement, parameters, context, executemany):
 ```
 
 ### 7.6 Hand-off: what each person delivers
+
+The checklist form of this section (order of work, who tests what, final checklist) is in [docs/cp3_handoff.md](docs/cp3_handoff.md).
 
 **Nannapat — API Engineering & Request Validation (+ web design)**
 1. `GET /api/v1/orders?user_id=` becomes a **paginated summary**: `id, order_number, status, total_amount, expires_at, created_at, ticket_count, paid_amount`, schema `OrderSummary`, envelope `PaginatedResponse`.
@@ -495,7 +508,7 @@ def count(conn, cursor, statement, parameters, context, executemany):
 2. A second scenario, **contention**: a hot event with N seats and 50 VUs racing for them; exactly N bookings must win, then `verify_consistency.py` must pass.
 3. Data: `seed.py --users 5000 --orders 20000` (more is fine) and a few users with hundreds of orders, so list endpoints are measured on realistic sizes.
 4. Run protocol: `pg_stats.py --reset` -> load test -> `pg_stats.py --top 15 --requests N --csv docs/perf/pg_top.csv` -> `verify_consistency.py`. Keep Locust `--csv` and `--html` output in `docs/perf/`.
-5. Before and after: run the same profile on the commit before Nannapat's change and after it, and give Pandara a comparison table and charts.
+5. Before and after: run the same profile on the commit before the list changes and after them, and give Pandara a comparison table and charts.
 6. Mongo: indexes and `explain()` for the events list (status + date_time).
 
    ```bash
@@ -521,7 +534,7 @@ def count(conn, cursor, statement, parameters, context, executemany):
 
 **Natthakritta — Backend Lead & Database Architecture (Done; remaining: defence)**
 Concurrency control and its tests, the consistency audit, the booking-path fixes (deadlock, event-id spelling, idempotent replay, all-or-nothing zone reservation),
-migration 0006, `pg_stat_statements` and `scripts/pg_stats.py`, capacity numbers, and the baseline in 7.7. Remaining: review teammates' pull requests against the contracts in 7.5 and re-run everything on a clean checkout before we submit.
+migration 0006, `pg_stat_statements` and `scripts/pg_stats.py`, capacity numbers, the baseline in 7.7, and the resilience work in 7.9 (limits on every wait, 409 / 503 mapping, batched sweeper and outbox, nginx fail-over, `scripts/resilience_lab.py`). Remaining: review teammates' pull requests against the contracts in 7.5 and re-run everything on a clean checkout before we submit.
 
 ### 7.7 Baseline measurements (what the code does today)
 
@@ -556,7 +569,7 @@ Per endpoint (after, p95 / p99): `GET /events` 29 / 79 ms, `GET /events/{id}` 23
 | `GET /orders/{id}` | 1 | 10 ms | 0.8 KB |
 | `GET /events?page_size=100` | 0 (Mongo) | 15 ms | **127 KB** |
 
-There is no N+1 today (statements stay constant), but the orders list loads whole entities and is not paginated; that is the 35-point projection task for Nannapat.
+There is no N+1 today (statements stay constant). The original `GET /orders?user_id=` loads whole entities and is not paginated; the summary endpoints in section 4 are the projection versions.
 
 **Races on the old booking code** (opposite-order bookings through nginx and both replicas; the same tests now pass): 20 of 150 two-seat rounds, 44 of 100 ten-seat rounds and 49 of 80 thirty-seat rounds returned HTTP 500 `DeadlockDetected`.
 The same seat could be sold twice by spelling the event id in upper case, and replaying a request with a differently-cased zone name answered 409 instead of the original order.
@@ -568,3 +581,45 @@ The same seat could be sold twice by spelling the event id in upper case, and re
 * Multi-event orders (items in different events) are reserved one zone at a time; they are all-or-nothing through compensation, not through one atomic step.
 * The spec's sample script books with `200` and `/tickets/book`; our API answers `201` on `/orders`. Explain this in the report.
 * The CP3 spec does not say how to submit; ask the instructor (same as CP2).
+* nginx, PostgreSQL and MongoDB are single instances: losing one is an outage of what depends on it (the rest keeps working, section 7.9). The replicas' debug ports 8001 / 8002 are published on the host.
+* A PostgreSQL restart (needed once to load `pg_stat_statements`) makes PostgreSQL-backed endpoints answer `503` for the duration; announce it before you do it on a shared stack.
+
+
+### 7.9 Keeping the API up when something is stuck or down
+
+Measured on a disposable stack, before and after: [docs/perf/resilience_results.md](docs/perf/resilience_results.md) (method, numbers, how to reproduce).
+In short: one stuck row lock used to make unrelated endpoints stop answering; a MongoDB outage used to fail every endpoint (18 % of requests under load);
+the outbox backlog grew without bound. Now every wait has a limit and a failing dependency answers `409` / `503` + `Retry-After` while everything else keeps working,
+with no change to the p95 / p99 of a healthy system (152 req/s, p95 120 ms, p99 140 ms, 0 failures at 50 users for 180 s).
+
+**Limits (environment variables, defaults are in `app/core/config.py`; `0` switches a limit off)**
+
+| Variable | Default | When it fires | Client sees |
+| --- | ---: | --- | --- |
+| `POSTGRES_LOCK_TIMEOUT_MS` | 5000 | a statement waited this long for a lock | `409` retry |
+| `POSTGRES_STATEMENT_TIMEOUT_MS` | 15000 | a statement ran this long | `503` + `Retry-After` |
+| `POSTGRES_POOL_TIMEOUT` (s) | 5 | all pooled connections busy | `503` + `Retry-After` |
+| `POSTGRES_CONNECT_TIMEOUT_S` | 2 | PostgreSQL does not accept a new connection | `503` + `Retry-After` |
+| `MONGO_SERVER_SELECTION_TIMEOUT_MS` | 1000 | MongoDB does not answer | `503` + `Retry-After` |
+| `SWEEP_BATCH_SIZE` / `SWEEP_MAX_BATCHES` | 500 / 20 | expired holds released per transaction / per 15 s tick | - |
+| `OUTBOX_BATCH_SIZE` / `OUTBOX_RETENTION_DAYS` | 1000 / 7 | outbox rows marked processed per statement / days processed rows are kept (0 = forever) | - |
+
+**Rules for new code**
+
+* Never call a database without a limit. New code gets the engine and the Mongo client from `app/core/database.py`, which already carry the limits above.
+  A command line script that really needs a long statement calls `relax_timeouts_for_scripts()` first (as `seed.py` does).
+* Let errors reach the global handler in `app/main.py`; do not catch `Exception` around database calls and return `500` yourself.
+  If you must catch, call `classify_db_error(exc)` and raise what it returns.
+* Background work belongs in `app/services/outbox_worker.py`: a thread, small batches, `SKIP LOCKED`.
+* The internal sweep endpoint `POST /orders/cleanup-expired` is not served by nginx. To call it, use a replica's debug port (`localhost:8001`), or call
+  `cleanup_expired_seat_holds` from Python (`tests/support.py: sweep_expired_holds`).
+
+**After pulling this change** (everyone, once)
+
+```bash
+docker compose up --build -d        # rebuilds the API image, recreates the replicas with the limits
+docker compose restart nginx        # nginx.conf is a bind mount: restart it to load the new file
+docker compose exec api python seed.py --users 250   # only if you want fresh data
+```
+
+**Try it yourself** (disposable stack only, it stops databases): `python scripts/resilience_lab.py --prefix rehearsal --url http://localhost:18000 --network rehearsal_default --image rehearsal_api:local all`
