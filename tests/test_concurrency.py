@@ -12,7 +12,7 @@ How each shared resource is protected, and the test that proves it:
                                  test_every_order_inserts_its_seats_in_one_global_order,
                                  test_opposite_order_multi_seat_bookings_never_return_5xx
   An order being paid         pessimistic lock: SELECT ... FOR UPDATE on the order row
-                              -> test_paying_twice_fails_with_400, test_parallel_payments_charge_the_order_once
+                              -> test_paying_twice_fails_with_409, test_parallel_payments_charge_the_order_once
   Pay vs expire vs cleanup    same row lock (+ SKIP LOCKED in the sweeper): every hold is released once
                               -> test_pay_vs_expiry_vs_cleanup_race_releases_each_seat_once,
                                  test_parallel_cleanup_releases_each_hold_once
@@ -23,6 +23,9 @@ How each shared resource is protected, and the test that proves it:
                               -> test_concurrent_user_updates_do_not_lose_each_other
   A collision that slips by   PostgreSQL deadlock/serialization errors become HTTP 409, never 500
                               -> test_database_deadlock_is_answered_with_409_and_seats_are_returned
+  An overloaded database      pool timeout / statement timeout become HTTP 503 + Retry-After, never 500
+                              -> test_exhausted_connection_pool_is_answered_with_503,
+                                 test_statement_timeout_during_booking_is_answered_with_503_and_seats_are_returned
 
 Run it:
   docker compose exec api pytest tests/test_concurrency.py -v -s                  # in-process
@@ -30,9 +33,11 @@ Run it:
       # real HTTP through nginx and both API replicas (races between two Python processes)
   docker compose exec api python tests/test_concurrency.py                        # same, as a script
 
-Status codes: a successful booking answers 201 (resource created), a lost race answers 409.
-"""
+Status codes: a successful booking answers 201 (resource created), a lost race answers 409,
+an overloaded database answers 503 (retry after Retry-After seconds).
+""" 
 import concurrent.futures
+import importlib 
 import os
 import sys
 import uuid
@@ -43,7 +48,7 @@ import pytest
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from app.core.database import SessionLocal  # noqa: E402
-from app.models.sql_models import Order  # noqa: E402
+from app.models.sql_models import Order, OutboxEvent # noqa: E402
 from tests.support import LIVE_MODE, build_environment, client, post_order, run_parallel  # noqa: E402
 
 
@@ -193,8 +198,10 @@ def test_idempotency_payload_mismatch(setup_test_environment):
     assert resp2.status_code == 409
 
 
-def test_paying_twice_fails_with_400(setup_test_environment):
-    """First payment succeeds; second payment on the same order returns HTTP 400 Bad Request."""
+def test_paying_twice_fails_with_409(setup_test_environment):
+    """First payment succeeds; second payment on the same order returns HTTP 409 Conflict.
+     The request is well-formed (not a 400); it conflicts with the order's current state.
+    """
     env = setup_test_environment
     user_id = env["user_id"]
     ev_id = env["make_event"]([{"name": "Zone B", "price": 800.0, "capacity": 5, "booked_count": 0}])
@@ -219,12 +226,12 @@ def test_paying_twice_fails_with_400(setup_test_environment):
     )
     assert pay_resp1.status_code == 201
 
-    # 3. Second payment fails with 400 Bad Request
+    # 3. Second payment fails with 409 Conflict
     pay_resp2 = client.post(
         f"/api/v1/orders/{order_id}/payments",
         json={"amount": total, "provider": "promptpay"},
     )
-    assert pay_resp2.status_code == 400
+    assert pay_resp2.status_code == 409
     assert "already paid" in pay_resp2.json()["detail"].lower()
 
 
@@ -287,7 +294,7 @@ def test_last_ticket_20_users(setup_test_environment):
 
 
 def test_parallel_payments_charge_the_order_once(setup_test_environment):
-    """20 payments for the same pending order at the same instant: one charge, nineteen refusals."""
+    """20 payments for the same pending order at the same instant: one charge, nineteen 409 refusals."""
     env = setup_test_environment
     event_id = env["make_event"]([{"name": "Pay Once", "price": 800.0, "capacity": 5, "booked_count": 0}])
     order = post_order(env["user_id"], event_id, "Pay Once", seats=["PO-1"]).json()
@@ -300,10 +307,10 @@ def test_parallel_payments_charge_the_order_once(setup_test_environment):
         range(20),
     )
     codes = [r.status_code for r in responses]
-    print(f"Parallel payments -> {codes.count(201)} charged, {codes.count(400)} refused")
+    print(f"Parallel payments -> {codes.count(201)} charged, {codes.count(409)} refused")
 
     assert codes.count(201) == 1, f"the order must be charged exactly once, got {sorted(codes)}"
-    assert codes.count(400) == 19, f"every other payment must be refused with 400, got {sorted(codes)}"
+    assert codes.count(409) == 19, f"every other payment must be refused with 409, got {sorted(codes)}" 
     scalar = env["scalar"]
     assert scalar("SELECT count(*) FROM payments WHERE order_id = :o AND status = 'completed'", o=order["id"]) == 1
     assert scalar("SELECT status FROM orders WHERE id = :o", o=order["id"]) == "confirmed"
@@ -501,8 +508,10 @@ def test_pay_vs_expiry_vs_cleanup_race_releases_each_seat_once(setup_test_enviro
     """3 expired holds are paid and swept at the same instant; 2 live holds must stay untouched.
 
     An expired hold can never be paid, and its seat must go back to the pool exactly once
-    (releasing twice would hand out a seat that another order still holds).
-    """
+    (releasing twice would hand out a seat that another order still holds). Whoever wins the
+    row lock, the payment answers 410 Gone: either it finds the hold past expires_at, or the
+    sweeper already marked the order 'expired'.
+    """ 
     env = setup_test_environment
     user_id = env["user_id"]
     event_id = env["make_event"]([{"name": "Expiry", "price": 300.0, "capacity": 50, "booked_count": 0}])
@@ -526,7 +535,7 @@ def test_pay_vs_expiry_vs_cleanup_race_releases_each_seat_once(setup_test_enviro
     sweep_codes = [r.status_code for kind, r in results if kind == "sweep"]
     print(f"Pay vs sweep -> payments {sorted(pay_codes)}, sweeps {sorted(sweep_codes)}")
 
-    assert all(c in (400, 410) for c in pay_codes), f"an expired hold must never be payable, got {pay_codes}"
+    assert all(c == 410 for c in pay_codes), f"an expired hold must answer 410 Gone, got {pay_codes}" 
     assert all(c == 200 for c in sweep_codes), f"the sweeper must not fail, got {sweep_codes}"
 
     scalar = env["scalar"]
@@ -586,7 +595,7 @@ def test_concurrent_user_updates_do_not_lose_each_other(postgres_environment):
     assert final["last_name"].startswith("B"), f"a stale update put the old last name back: {final}"
     assert final["full_name"] == f"{final['first_name']} {final['last_name']}"
 
-
+#test deadlock
 @pytest.mark.skipif(LIVE_MODE, reason="patches the server process, so it only works in-process")
 def test_database_deadlock_is_answered_with_409_and_seats_are_returned(setup_test_environment, monkeypatch):
     """If PostgreSQL ever aborts a booking as a deadlock victim, the client gets 409 and keeps no seat."""
@@ -616,6 +625,75 @@ def test_database_deadlock_is_answered_with_409_and_seats_are_returned(setup_tes
     assert env["booked"](event_id) == 0, "the reserved seat must be given back"
     assert env["active_tickets"](event_id) == 0, "nothing may be persisted"
     assert post_order(env["user_id"], event_id, "Safety Net").status_code == 201, "the retry must succeed"
+# ---------------------------------------------------------------------------------------------
+# Overload: the database is busy, not the request's fault -> HTTP 503 + Retry-After, never 500
+# ---------------------------------------------------------------------------------------------
+
+
+@pytest.mark.skipif(LIVE_MODE, reason="patches the server process, so it only works in-process")
+def test_exhausted_connection_pool_is_answered_with_503(setup_test_environment, monkeypatch):  # ADD
+    """Every pooled connection is busy: SQLAlchemy raises its pool TimeoutError, the client gets 503.
+
+    sqlalchemy.exc.TimeoutError is NOT a DBAPIError, so this proves the dedicated handler in
+    app/main.py catches it (before, it fell through to a 500). Faking the error keeps the test
+    deterministic; the manual proof is pool size 1 + LOCK TABLE orders in psql.
+    """
+    from sqlalchemy.exc import TimeoutError as PoolTimeoutError
+    from app.core.db_errors import RETRY_AFTER_SECONDS
+
+    orders_api = importlib.import_module("app.api.v1.orders")  # the module itself, not the router object
+
+    def pool_exhausted(db):
+        raise PoolTimeoutError("QueuePool limit of size 1 overflow 0 reached, connection timed out, timeout 2.00")
+
+    monkeypatch.setattr(orders_api, "_order_summary_query", pool_exhausted)  # only this endpoint fails, no other request is affected
+    response = client.get("/api/v1/orders/1/summary")
+
+    assert response.status_code == 503, response.text
+    assert response.headers.get("retry-after") == str(RETRY_AFTER_SECONDS), "the client must be told when to retry"
+    assert "busy" in response.json()["detail"].lower()
+
+
+@pytest.mark.skipif(LIVE_MODE, reason="patches the server process, so it only works in-process")
+def test_statement_timeout_during_booking_is_answered_with_503_and_seats_are_returned(setup_test_environment, monkeypatch):  # ADD
+    """PostgreSQL cancels a slow booking (statement_timeout, SQLSTATE 57014): 503, no seat kept, retry works.
+
+    Before, create_order_dual_db only recognised deadlocks, so a timeout inside its transaction
+    became a 500 that also leaked the raw database error to the client.
+    """
+    from sqlalchemy.exc import OperationalError
+    from sqlalchemy.orm import Session
+
+    env = setup_test_environment
+    event_id = env["make_event"]([{"name": "Timeout", "price": 100.0, "capacity": 3, "booked_count": 0}])
+
+    class FakeStatementTimeout(Exception):
+        pgcode = "57014"  # SQLSTATE query_canceled (statement_timeout fired)
+
+    real_commit = Session.commit
+    calls = {"failed": False}
+
+    def failing_commit(self):
+        # Fail only the booking's own commit (it carries the new SEAT_HELD outbox row), so the
+        # background worker or another session committing at the same moment is never hit by mistake.
+        is_booking = any(isinstance(obj, OutboxEvent) and obj.event_type == "SEAT_HELD" for obj in self.new)
+        if is_booking and not calls["failed"]:
+            calls["failed"] = True
+            raise OperationalError("COMMIT", {}, FakeStatementTimeout("canceling statement due to statement timeout"))
+        return real_commit(self)
+
+    monkeypatch.setattr(Session, "commit", failing_commit)
+    response = post_order(env["user_id"], event_id, "Timeout")
+
+    assert calls["failed"], "the fake timeout was never triggered, the test proved nothing"
+    assert response.status_code == 503, response.text
+    assert response.headers.get("retry-after"), "a 503 must carry Retry-After"
+    detail = response.json()["detail"].lower()
+    assert "busy" in detail
+    assert "statement" not in detail and "sql" not in detail, "internal database errors must not leak to the client"
+    assert env["booked"](event_id) == 0, "the reserved seat must be given back"
+    assert env["active_tickets"](event_id) == 0, "nothing may be persisted"
+    assert post_order(env["user_id"], event_id, "Timeout").status_code == 201, "the retry must succeed"
 
 
 if __name__ == "__main__":
