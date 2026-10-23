@@ -15,7 +15,9 @@ from typing import Optional
 
 from fastapi import HTTPException, status
 #add : error when pool time out
-from sqlalchemy.exc import TimeoutError as PoolTimeoutError
+from sqlalchemy.exc import OperationalError, TimeoutError as PoolTimeoutError
+# MongoDB unreachable: ServerSelectionTimeoutError, NetworkTimeout and AutoReconnect are all ConnectionFailure
+from pymongo.errors import ConnectionFailure as MongoConnectionFailure
 
 logger = logging.getLogger("db_errors")
 
@@ -50,7 +52,11 @@ def is_retryable_conflict(exc: BaseException) -> bool:
 
 #check this is 503 or not
 def is_service_unavailable(exc: BaseException) -> bool:
-    if isinstance(exc, PoolTimeoutError): #check type of exception
+    if isinstance(exc, (PoolTimeoutError, MongoConnectionFailure)): #check type of exception
+        return True
+    # PostgreSQL itself is unreachable (stopped, restarting, network): the driver raises OperationalError
+    # without a SQLSTATE because no server ever answered. Real SQL errors always carry one.
+    if isinstance(exc, OperationalError) and pgcode(exc) is None:
         return True
     return pgcode(exc) in UNAVAILABLE_PGCODES #error from Posgres when overload
 
@@ -61,7 +67,14 @@ def conflict_exception(exc: BaseException) -> HTTPException:
 
 #create HTTP 503 with log
 def unavailable_exception(exc: BaseException) -> HTTPException:
-    reason = "pool timeout" if isinstance(exc, PoolTimeoutError) else f"SQLSTATE {pgcode(exc)}"
+    if isinstance(exc, PoolTimeoutError):
+        reason = "pool timeout"
+    elif isinstance(exc, MongoConnectionFailure):
+        reason = f"MongoDB unreachable ({type(exc).__name__})"
+    elif pgcode(exc) is None:
+        reason = "PostgreSQL unreachable"
+    else:
+        reason = f"SQLSTATE {pgcode(exc)}"
     logger.warning("Database unavailable (%s): answering 503", reason)
     return HTTPException(
         status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
