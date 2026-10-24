@@ -17,9 +17,11 @@ from typing import Callable, Iterable, List, Optional
 
 import pytest
 from bson import ObjectId
-from sqlalchemy import insert, text
+from pymongo.collection import Collection
+from sqlalchemy import event, insert, text
+from sqlalchemy.engine.default import ExecuteStyle
 
-from app.core.database import SessionLocal, mongo_db, check_postgres_connection, check_mongo_connection
+from app.core.database import SessionLocal, engine, mongo_db, check_postgres_connection, check_mongo_connection
 from app.models.sql_models import User
 from app.services.user_service import hash_password
 
@@ -185,3 +187,71 @@ def build_environment(need_mongo: bool = True):
         "scalar": scalar,
     }
     return env, teardown
+
+
+class QueryCounter:
+    """Counts the database round trips THIS process makes while the block runs (in-process mode only).
+
+    SQL    every cursor.execute. A multi-row statement SQLAlchemy builds itself (INSERT ... VALUES (..),(..),
+           "insertmanyvalues") is ONE round trip; an executemany of N parameter sets is N, because psycopg2
+           sends those one by one. That second kind is what an N+1 looks like on a write path.
+    Mongo  every public Collection call (find, find_one, count_documents, aggregate, update_one, insert_one ...).
+           A call that calls another public method itself (find_one -> find, count_documents -> aggregate) counts
+           once. getMore round trips of a cursor are not counted: no list here is bigger than one batch.
+
+    with QueryCounter() as counted:
+        client.get(...)
+    counted.sql, counted.mongo, counted.statements, counted.mongo_calls
+    """
+
+    MONGO_METHODS = (
+        "find", "find_one", "count_documents", "estimated_document_count", "aggregate", "distinct",
+        "insert_one", "insert_many", "update_one", "update_many", "replace_one", "delete_one", "delete_many",
+        "find_one_and_update", "find_one_and_delete", "bulk_write",
+    )
+    _IGNORED_SQL = {"SELECT 1", "ROLLBACK", "COMMIT", "BEGIN"}
+
+    def __init__(self):
+        self.sql = 0
+        self.mongo = 0
+        self.statements = []
+        self.mongo_calls = []
+        self._depth = threading.local()
+        self._originals = {}
+
+    def _on_sql(self, conn, cursor, statement, parameters, context, executemany):
+        if statement.strip().upper() in self._IGNORED_SQL:
+            return
+        rows = len(parameters) if getattr(context, "execute_style", None) == ExecuteStyle.EXECUTEMANY else 1
+        self.sql += rows
+        self.statements.append((" ".join(statement.split())[:100], rows))
+
+    def _wrap(self, name, original):
+        counter = self
+
+        def wrapper(collection, *args, **kwargs):
+            depth = getattr(counter._depth, "n", 0)
+            if depth == 0:
+                counter.mongo += 1
+                counter.mongo_calls.append(f"{collection.name}.{name}")
+            counter._depth.n = depth + 1
+            try:
+                return original(collection, *args, **kwargs)
+            finally:
+                counter._depth.n = depth
+
+        wrapper.__name__ = name
+        return wrapper
+
+    def __enter__(self):
+        event.listen(engine, "before_cursor_execute", self._on_sql)
+        for name in self.MONGO_METHODS:
+            self._originals[name] = getattr(Collection, name)
+            setattr(Collection, name, self._wrap(name, self._originals[name]))
+        return self
+
+    def __exit__(self, *exc_info):
+        event.remove(engine, "before_cursor_execute", self._on_sql)
+        for name, original in self._originals.items():
+            setattr(Collection, name, original)
+        return False
