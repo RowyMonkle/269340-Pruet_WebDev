@@ -3,23 +3,25 @@ import logging
 import uuid
 from datetime import datetime, timedelta, timezone
 from decimal import Decimal
-from typing import List, Optional
+from typing import Optional
 from bson import ObjectId
 from bson.errors import InvalidId
 from fastapi import HTTPException, status
 from sqlalchemy import func, insert, select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, joinedload, load_only
+from sqlalchemy.orm.attributes import set_committed_value #mark a relationship as already load (no select)
 from pymongo.database import Database
 
 from app.core.config import settings
-from app.core.db_errors import classify_db_error 
-from app.models.sql_models import User, Order, Ticket, OutboxEvent
+from app.core.db_errors import classify_db_error, pgcode
+from app.models.sql_models import Order, Ticket, OutboxEvent
 from app.schemas.order import OrderCreate
 
 logger = logging.getLogger("order_service")
 #partial unique index that blocks double-booking (see sql_models.Ticket)
 SEAT_UNIQUE_CONSTRAINT = "uq_tickets_event_zone_seat"  
+FOREIGN_KEY_VIOLATION = "23503" # SQLSTATE when orders.user_id points at a user that does not exist
 
 def _canonical_event_id(raw_id: str) -> str:
     """The one spelling of an event id (ObjectId hex is case-insensitive, the unique seat index is not)."""
@@ -87,16 +89,16 @@ def create_order_dual_db(
     Orchestration:
     1. Check Idempotency-Key: if key already exists, verify payload fingerprint. If payload differs, return 409.
        If identical, return previous order without re-charging or duplicating seats.
-    2. Verify customer account in PostgreSQL.
-    3. Verify events and zones in MongoDB (one read for all events), extract authoritative prices.
-    4. Atomically reserve seat capacity in MongoDB: ONE conditional update per (event, zone) for the whole
+    2. Verify events and zones in MongoDB (one read for all events), extract authoritative prices.
+    3. Atomically reserve seat capacity in MongoDB: ONE conditional update per (event, zone) for the whole
        quantity (booked_count <= capacity - quantity), all-or-nothing.
-    5. Start PostgreSQL transaction: persist Order with 10-minute hold expiry and Tickets with 'held' status,
-       inserting seats in one global order (event, zone, seat) so concurrent orders cannot deadlock.
-    6. Catch concurrent idempotency races, double-booking violations and database collisions
-       (deadlock / serialization failure -> 409), pool / statement timeout -> 503); give the MongoDB seats
+    4. PostgreSQL transaction in 3 round trips: INSERT order, INSERT all tickets (one multi-row statement,
+       in one global seat order so concurrent orders cannot deadlock), INSERT the SEAT_HELD outbox event.
+       The user is verified by the orders.user_id FOREIGN KEY (unknown user -> 404), not by a separate SELECT,
+       and nothing is read back after COMMIT: RETURNING already gave us the ids and server defaults.
+    5. Catch concurrent idempotency races, unknown users, double-booking violations and database errors
+       (deadlock / serialization failure -> 409, pool / statement timeout -> 503); give the MongoDB seats
        back on any failure.
-    7. Record SEAT_HELD in OutboxEvent table for cross-DB consistency.
     """
     # 1. Idempotency Check
     if idempotency_key:
@@ -124,20 +126,9 @@ def create_order_dual_db(
                 )
             return existing_order
 
-    # 2. Verify User exists in PostgreSQL (load only id for performance)
-    user = (
-        db.query(User)
-        .options(load_only(User.id))
-        .filter(User.id == order_in.user_id)
-        .first()
-    )
-    if not user:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"User with ID {order_in.user_id} does not exist",
-        )
+    
 
-    # 3. Pre-validate Event & Zone in MongoDB and determine Authoritative Pricing
+     # 2. Pre-validate Event & Zone in MongoDB and determine Authoritative Pricing
     events_collection = mongo_db["events"]
     validated_items = []
     total_amount = Decimal("0.00")
@@ -211,7 +202,7 @@ def create_order_dual_db(
     # each hold one unique-index entry and wait for the other (deadlock, HTTP 500).
     validated_items.sort(key=_lock_order_key)
 
-    # 4. Atomic MongoDB Capacity Reservation (prevents overselling)
+    # 3. Atomic MongoDB Capacity Reservation (prevents overselling)
     # One conditional update per (event, zone) for ALL the tickets the order takes there: the order
     # either gets its whole quantity or nothing, so concurrent multi-ticket orders can never block
     # each other with half-reserved zones, and a 4-ticket order costs one Mongo call, not four.
@@ -250,7 +241,7 @@ def create_order_dual_db(
         _release_reservations(events_collection, mongo_reserved)
         raise
 
-    # 5. PostgreSQL Transaction: Order & Ticket Creation with 10-Minute Hold Window
+    # 4. PostgreSQL Transaction: Order & Ticket Creation with 10-Minute Hold Window
     now = datetime.now(timezone.utc)
     hold_expires_at = now + timedelta(minutes=10)
     order_number = f"ORD-{now.strftime('%Y%m%d')}-{uuid.uuid4().hex[:8].upper()}"
@@ -265,26 +256,28 @@ def create_order_dual_db(
         idempotency_key=idempotency_key,
     )
 
+    # tickets attached through the relationship, so SQLAlchemy fills in order_id after the order INSERT
+    # and knows the collection is already loaded (no SELECT tickets when the response is built).
+    # validated_items is sorted, so the multi-row INSERT still takes the seats in the one global order.
+    new_order.tickets = [
+        Ticket(
+            event_id=v_item["event_id"],
+            ticket_code=f"TKT-{uuid.uuid4().hex[:12].upper()}",
+            seat_zone=v_item["seat_zone"],
+            seat_number=v_item["seat_number"],
+            price=v_item["price"],
+            status="held",  # Held during the 10-minute hold window
+        )
+        for v_item in validated_items
+    ]
+
+     #keep what INSERT ... RETURNING gave us (ids, created_at) valid after COMMIT.
+    db.expire_on_commit = False
+    
     try:
         db.add(new_order)
         db.flush()  # Generates new_order.id
-
-        created_tickets = []
-        for v_item in validated_items:
-            ticket_code = f"TKT-{uuid.uuid4().hex[:12].upper()}"
-            ticket = Ticket(
-                order_id=new_order.id,
-                event_id=v_item["event_id"],
-                ticket_code=ticket_code,
-                seat_zone=v_item["seat_zone"],
-                seat_number=v_item["seat_number"],
-                price=v_item["price"],
-                status="held",  # Held during the 10-minute hold window
-            )
-            created_tickets.append(ticket)
-            db.add(ticket)
-
-        db.flush()
+        set_committed_value(new_order, "payments", [])
 
         # Transactional Outbox Pattern: Record SEAT_HELD event in PostgreSQL transaction
         outbox = OutboxEvent(
@@ -296,15 +289,15 @@ def create_order_dual_db(
                 "expires_at": hold_expires_at.isoformat(),
                 "tickets": [
                     {"event_id": t.event_id, "seat_zone": t.seat_zone, "seat_number": t.seat_number}
-                    for t in created_tickets
+                    for t in new_order.tickets
                 ],
             }),
             status="pending",
         )
         db.add(outbox)
 
-        db.commit()
-        db.refresh(new_order)
+        db.commit() # INSERT outbox + COMMIT
+        
 
     except IntegrityError as iexc:
         db.rollback()
@@ -325,6 +318,13 @@ def create_order_dual_db(
             if winning_order:
                 return winning_order
 
+        # the foreign key replaced the SELECT user, so an unknown user is reported here
+        if pgcode(iexc) == FOREIGN_KEY_VIOLATION and "user_id" in constraint:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"User with ID {order_in.user_id} does not exist",
+            )
+
         if SEAT_UNIQUE_CONSTRAINT in constraint:  # only the seat index means double-booking (was: every IntegrityError)
             raise HTTPException(
                 status_code=status.HTTP_409_CONFLICT,
@@ -335,9 +335,9 @@ def create_order_dual_db(
         logger.exception("Unexpected integrity error while creating order (constraint: %s)", constraint)
 
         # Otherwise it was a double-booking seat violation
-        raise HTTPException(
+        raise HTTPException( 
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-             detail="Order could not be created because of a data integrity error. Nothing was saved.",
+            detail="Order could not be created because of a data integrity error. Nothing was saved.",
         )
 
     except Exception as exc:
@@ -355,7 +355,7 @@ def create_order_dual_db(
             detail="Dual-database transaction failed. Nothing was saved and the reserved seats were released.",  # no str(exc), internal SQL must not leak
         )
 
-    # 6. Telemetry logging to MongoDB 'activity_logs'
+    # 5. Telemetry logging to MongoDB 'activity_logs'
     try:
         mongo_db["activity_logs"].insert_one(
             {
