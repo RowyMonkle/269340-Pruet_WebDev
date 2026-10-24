@@ -56,6 +56,8 @@ class User(Base):
     __table_args__ = (
         Index("idx_users_created_at", created_at.desc()),
         Index("idx_users_last_name", "last_name"),
+        # CP3 guard (migration 0007): a role outside this set is refused by the database
+        CheckConstraint("role IN ('fan', 'organizer', 'admin')", name="chk_users_role"),
     )
 
     def __repr__(self):
@@ -110,11 +112,12 @@ class Order(Base):
 
     __table_args__ = (
         CheckConstraint("total_amount >= 0", name="chk_order_total_amount_positive"),
-        Index("idx_orders_user_id", "user_id"),
-        Index("idx_orders_status", "status"),
-        Index("idx_orders_expires_at", "expires_at"),
-        Index("idx_orders_created_at", created_at.desc()),
+        CheckConstraint("status IN ('pending', 'paid', 'confirmed', 'expired', 'cancelled')", name="chk_orders_status"),
+        # Index set reviewed in migration 0008 / docs/perf/index_review.md. Do not re-add (user_id), (status),
+        # (expires_at) or (created_at) on their own: the composites below already answer those lookups, and
+        # every extra index slows every write. tests/test_index_usage.py fails if a redundant index comes back.
         Index("idx_orders_user_status", "user_id", "status"),
+        # the sweeper: status = 'pending' AND expires_at < now ORDER BY expires_at, id
         Index("idx_orders_status_expires", "status", "expires_at"),
         # CP3: orders list (user_id filter, newest first, stable page order) - see migration 0006
         Index("idx_orders_user_created", "user_id", created_at.desc(), id.desc()),
@@ -157,9 +160,9 @@ class Ticket(Base):
 
     __table_args__ = (
         CheckConstraint("price >= 0", name="chk_ticket_price_positive"),
+        CheckConstraint("status IN ('held', 'valid', 'used', 'refunded', 'cancelled')", name="chk_tickets_status"),
         Index("idx_tickets_order_id", "order_id"),
-        Index("idx_tickets_event_id", "event_id"),
-        Index("idx_tickets_event_zone", "event_id", "seat_zone"),
+        Index("idx_tickets_event_zone", "event_id", "seat_zone"),  # also serves event_id alone (0008 dropped idx_tickets_event_id)
         # Partial unique index: prevents double-booking for any ticket currently held or valid
         Index(
             "uq_tickets_event_zone_seat",
@@ -218,9 +221,10 @@ class Payment(Base):
 
     __table_args__ = (
         CheckConstraint("amount >= 0", name="chk_payment_amount_positive"),
-        Index("idx_payments_order_id", "order_id"),
-        Index("idx_payments_status", "status"),
-        Index("idx_payments_order_status", "order_id", "status"),
+        CheckConstraint("status IN ('pending', 'completed', 'failed', 'refunded')", name="chk_payments_status"),
+        # CP3 guard (migration 0007): at most ONE completed payment per order, enforced by the database itself
+        Index("uq_payments_order_completed", "order_id", unique=True, postgresql_where=text("status = 'completed'")),
+        Index("idx_payments_order_status", "order_id", "status"),  # also serves order_id alone (0008 dropped idx_payments_order_id)
     )
 
     def __repr__(self):
@@ -251,9 +255,8 @@ class OutboxEvent(Base):
     processed_at = Column(DateTime(timezone=True), nullable=True)
 
     __table_args__ = (
-        Index("idx_outbox_status_created", "status", "created_at"),
-        Index("idx_outbox_event_type", "event_type"),
-        Index("idx_outbox_aggregate_id", "aggregate_id"),
+        CheckConstraint("status IN ('pending', 'processed', 'failed')", name="chk_outbox_status"),
+        Index("idx_outbox_status_created", "status", "created_at"),  # the only reader is the worker (0008 dropped two unread indexes)
     )
 
     def __repr__(self):

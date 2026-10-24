@@ -115,9 +115,13 @@ _BASE_COLUMNS = (
 )
 
 
+def _user_column_list(include_legacy: bool) -> tuple:
+    return _BASE_COLUMNS + ((User.full_name,) if include_legacy else ())
+
+
 def _user_columns(include_legacy: bool):
-    columns = _BASE_COLUMNS + ((User.full_name,) if include_legacy else ())
-    return load_only(*columns)
+    """load_only option, for the paths that need a real entity (update)."""
+    return load_only(*_user_column_list(include_legacy))
 
 
 def build_user_response(user: User, read_source: str) -> UserResponse:
@@ -156,9 +160,9 @@ def get_user_by_id(db: Session, user_id: int) -> UserResponse:
     CP2 Phase 4: the active user_name_read_source flag decides which name columns are read.
     """
     read_source = get_flag("user_name_read_source")
+    # read-only: select the columns (a plain row), not an entity the session would have to track
     user = (
-        db.query(User)
-        .options(_user_columns(include_legacy=read_source != "new"))
+        db.query(*_user_column_list(include_legacy=read_source != "new"))
         .filter(User.id == user_id)
         .first()
     )
@@ -179,10 +183,10 @@ def get_users_paginated(
     Includes all fields serialized by UserResponse (including updated_at) to avoid deferred column loads.
     """
     read_source = get_flag("user_name_read_source")
-    # count() on the projected query would wrap a SELECT of every mapped column
-    # (hashed_password, full_name...), so count ids directly.
+    # Two statements however many rows: a COUNT, and one SELECT of just the columns the response needs
+    # (plain rows, no entities for the session to track, never hashed_password).
     total = db.query(func.count(User.id)).scalar()
-    query = db.query(User).options(_user_columns(include_legacy=read_source != "new"))
+    query = db.query(*_user_column_list(include_legacy=read_source != "new"))
     offset = (page - 1) * page_size
     items = query.order_by(User.id.asc()).offset(offset).limit(page_size).all()
     return [build_user_response(user, read_source) for user in items], total

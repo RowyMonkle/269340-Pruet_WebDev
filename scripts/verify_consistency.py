@@ -173,7 +173,11 @@ def run_audit(engine, mongo_db, wait: float = 0.0, retries: int = 0) -> Tuple[Li
 def repair(mongo_db, drift: List[tuple]) -> int:
     """Make the Mongo counter equal the PostgreSQL ticket count (PostgreSQL is the truth)."""
     for oid, zone, expected in drift:
-        mongo_db["events"].update_one({"_id": oid, "zones.name": zone}, {"$set": {"zones.$.booked_count": expected}})
+        # bypass the events validator on purpose: the PostgreSQL count is the truth, even when it exceeds the capacity
+        # (that is exactly the situation worth repairing and then investigating)
+        mongo_db["events"].update_one(
+            {"_id": oid, "zones.name": zone}, {"$set": {"zones.$.booked_count": expected}}, bypass_document_validation=True
+        )
         print(f"  REPAIR event {oid} zone {zone!r}: booked_count set to {expected}")
     return len(drift)
 
@@ -196,7 +200,9 @@ def main(argv=None) -> int:
                         help="set Mongo booked_count to the PostgreSQL ticket count for drifted zones (stop traffic first)")
     args = parser.parse_args(argv)
 
-    from app.core.database import engine, mongo_db  # imported late so --help works without a database
+    from app.core.database import engine, mongo_db, relax_timeouts_for_scripts  # imported late so --help works without a database
+
+    relax_timeouts_for_scripts()  # an audit over millions of rows must not be cancelled by the API's 15 s statement limit
 
     print("[consistency] PostgreSQL vs MongoDB audit")
     results, drift = run_audit(engine, mongo_db, args.wait, args.retries)

@@ -6,7 +6,7 @@ Handles the three states a database can be in:
      stamped (no alembic_version)         0002 first, then upgrade the rest.
   3. Already tracked by Alembic        -> plain `alembic upgrade <target>`.
 
-It stops at MIGRATE_TARGET (default: 0006_orders_list_index, the last non-destructive
+It stops at MIGRATE_TARGET (default: 0008_drop_redundant_indexes, the last non-destructive
 revision), NOT at `head` (there are two heads on purpose), so `docker compose up` can never
 run the CP2 Phase 5 contract revision.
 Apply that one on purpose:  alembic upgrade 0005_contract_user_full_name
@@ -26,9 +26,10 @@ sys.path.insert(0, ROOT)
 from app.core.config import settings  # noqa: E402
 
 INIT_SQL_REVISION = "0002_add_payments_holds_outbox"
-# 0005 drops users.full_name, so it is never applied automatically. 0006 (CP3 index) hangs off
-# 0004 as a second head, so upgrading to it applies everything except the contract.
-DEFAULT_TARGET = "0006_orders_list_index"
+# 0005 drops users.full_name, so it is never applied automatically. 0006 (CP3 index), 0007 (database guards) and
+# 0008 (index review) hang off 0004 as a second branch, so upgrading to the head of it applies everything except
+# the contract.
+DEFAULT_TARGET = "0008_drop_redundant_indexes"
 
 
 def main() -> None:

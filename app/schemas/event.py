@@ -1,6 +1,6 @@
 from datetime import datetime
 from typing import Any, Dict, List, Optional
-from pydantic import BaseModel, Field, ConfigDict
+from pydantic import BaseModel, Field, ConfigDict, model_validator
 
 
 class ZoneSchema(BaseModel):
@@ -8,6 +8,13 @@ class ZoneSchema(BaseModel):
     price: float = Field(..., ge=0.0, description="Ticket price for this zone")
     capacity: int = Field(..., gt=0, description="Maximum seats/tickets in this zone")
     booked_count: int = Field(default=0, ge=0, description="Currently reserved or booked tickets")
+
+    @model_validator(mode="after")
+    def booked_count_within_capacity(self):
+        # the same rule the MongoDB validator enforces: answer 400 here instead of failing at the database
+        if self.booked_count > self.capacity:
+            raise ValueError("booked_count must not exceed capacity")
+        return self
 
 
 class ArtistSchema(BaseModel):
@@ -23,6 +30,32 @@ class VenueSchema(BaseModel):
     country: str = Field(default="Thailand", max_length=100)
     capacity: int = Field(..., gt=0)
     address: Optional[str] = None
+
+
+class ArtistSummary(BaseModel):
+    name: str = ""
+    genre: str = ""
+
+
+class VenueSummary(BaseModel):
+    name: str = ""
+    city: str = ""
+
+
+class EventSummary(BaseModel):
+    """One row of the catalog list: what a card needs, no zones, bio, tags or dynamic attributes.
+
+    The full document is GET /events/{id} (EventResponse).
+    """
+    id: str
+    title: str
+    category: str = "Concert"
+    artist: ArtistSummary = ArtistSummary()
+    venue: VenueSummary = VenueSummary()
+    date_time: Optional[datetime] = None
+    status: str = "upcoming"
+    min_price: Optional[float] = Field(None, description="Lowest zone price, null when the event has no zones")
+    seats_left: int = Field(0, ge=0, description="Sum over zones of capacity - booked_count (never below 0)")
 
 
 class EventCreate(BaseModel):

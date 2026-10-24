@@ -5,7 +5,9 @@ from bson.errors import InvalidId
 from fastapi import HTTPException, status
 from pymongo.database import Database
 
-from app.schemas.event import EventCreate, EventResponse, ZoneSchema, ArtistSchema, VenueSchema
+from app.schemas.event import (
+    EventCreate, EventResponse, EventSummary, ArtistSummary, VenueSummary, ZoneSchema, ArtistSchema, VenueSchema,
+)
 
 
 # Explicit MongoDB Projection Document (eliminates over-fetching unneeded fields)
@@ -44,14 +46,54 @@ def _format_event_doc(doc: Dict[str, Any]) -> EventResponse:
     )
 
 
+# The catalog list is computed INSIDE MongoDB: the document is cut down to the card fields and the two
+# derived numbers (lowest price, seats left) are calculated from the zones there, so zones, bio, tags and
+# dynamic_attributes never cross the network.
+_ZONES = {"$ifNull": ["$zones", []]}
+EVENT_SUMMARY_PROJECT = {
+    "$project": {
+        "title": 1,
+        "category": 1,
+        "date_time": 1,
+        "status": 1,
+        "artist": {"name": {"$ifNull": ["$artist.name", ""]}, "genre": {"$ifNull": ["$artist.genre", ""]}},
+        "venue": {"name": {"$ifNull": ["$venue.name", ""]}, "city": {"$ifNull": ["$venue.city", ""]}},
+        "min_price": {"$min": "$zones.price"},
+        "seats_left": {
+            "$sum": {
+                "$map": {
+                    "input": _ZONES,
+                    "as": "z",
+                    "in": {"$max": [0, {"$subtract": [{"$ifNull": ["$$z.capacity", 0]}, {"$ifNull": ["$$z.booked_count", 0]}]}]},
+                }
+            }
+        },
+    }
+}
+
+
+def _format_event_summary(doc: Dict[str, Any]) -> EventSummary:
+    return EventSummary(
+        id=str(doc["_id"]),
+        title=doc.get("title", ""),
+        category=doc.get("category", "Concert"),
+        artist=ArtistSummary(**doc.get("artist", {})),
+        venue=VenueSummary(**doc.get("venue", {})),
+        date_time=doc.get("date_time"),
+        status=doc.get("status", "upcoming"),
+        min_price=doc.get("min_price"),
+        seats_left=int(doc.get("seats_left") or 0),
+    )
+
+
 def get_events_paginated(
     mongo_db: Database,
     page: int = 1,
     page_size: int = 20,
     category: Optional[str] = None,
     status_filter: Optional[str] = None,
-) -> Tuple[List[EventResponse], int]:
-    """Fetch paginated event catalog using database projection."""
+) -> Tuple[List[EventSummary], int]:
+    """Paginated catalog list: two MongoDB commands (count + one aggregation) however many events, summary rows only."""
     query: Dict[str, Any] = {}
     if category:
         query["category"] = category
@@ -62,14 +104,14 @@ def get_events_paginated(
     total = events_collection.count_documents(query)
 
     skip = (page - 1) * page_size
-    cursor = (
-        events_collection.find(query, projection=EVENT_PROJECTION)
-        .sort("date_time", 1)
-        .skip(skip)
-        .limit(page_size)
-    )
-
-    items = [_format_event_doc(doc) for doc in cursor]
+    pipeline = [
+        {"$match": query},
+        {"$sort": {"date_time": 1, "_id": 1}},  # _id breaks ties so pages never overlap
+        {"$skip": skip},
+        {"$limit": page_size},
+        EVENT_SUMMARY_PROJECT,
+    ]
+    items = [_format_event_summary(doc) for doc in events_collection.aggregate(pipeline)]
     return items, total
 
 

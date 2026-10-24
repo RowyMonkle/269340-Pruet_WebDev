@@ -12,6 +12,13 @@ x-api-env: &api-env
   POSTGRES_USER: dev_user
   POSTGRES_PASSWORD: dev_password
   POSTGRES_DB: main_db
+  POSTGRES_POOL_SIZE: ${POSTGRES_POOL_SIZE:-20} # ADD: overridable for 503 tests (default = config.py default)
+  POSTGRES_MAX_OVERFLOW: ${POSTGRES_MAX_OVERFLOW:-10} # ADD: overridable for 503 tests
+  POSTGRES_POOL_TIMEOUT: ${POSTGRES_POOL_TIMEOUT:-5} # ADD: seconds to wait for a pooled connection before HTTP 503
+  POSTGRES_LOCK_TIMEOUT_MS: ${POSTGRES_LOCK_TIMEOUT_MS:-5000} # a statement waits at most this long for a lock (55P03 -> 409), 0 = off
+  POSTGRES_STATEMENT_TIMEOUT_MS: ${POSTGRES_STATEMENT_TIMEOUT_MS:-15000} # per-query timeout (57014 -> 503), 0 = off
+  MONGO_SERVER_SELECTION_TIMEOUT_MS: ${MONGO_SERVER_SELECTION_TIMEOUT_MS:-1000} # MongoDB unreachable: fail after this long (-> 503)
+  OUTBOX_RETENTION_DAYS: ${OUTBOX_RETENTION_DAYS:-7} # processed outbox rows older than this are deleted, 0 = keep
   MONGO_HOST: mongo_db
   MONGO_PORT: 27017
   MONGO_DB: main_db
@@ -24,6 +31,8 @@ x-api-env: &api-env
 x-api-service: &api-service
   image: ${API_IMAGE:-ticweb_api:local}
   restart: unless-stopped
+  # uvicorn drains in-flight requests for 10 s on SIGTERM; give Docker longer than that before SIGKILL
+  stop_grace_period: 20s
   environment: *api-env
   healthcheck:
     test: ["CMD", "curl", "-fs", "http://localhost:8000/health"]
@@ -50,7 +59,14 @@ services:
       POSTGRES_PASSWORD: dev_password
     # CP3: preload pg_stat_statements so every normalized query is counted and timed;
     # read it with scripts/pg_stats.py (DB-side proof of SQL statements per request).
-    command: ["postgres", "-c", "shared_preload_libraries=pg_stat_statements", "-c", "pg_stat_statements.track=all"]
+    command:
+      [
+        "postgres",
+        "-c",
+        "shared_preload_libraries=pg_stat_statements",
+        "-c",
+        "pg_stat_statements.track=all",
+      ]
     ports:
       - "${POSTGRES_PORT:-5432}:5432"
     volumes:

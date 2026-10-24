@@ -1,7 +1,7 @@
 ### Key Enhancements:
 1. **Automated Schema Migration (`ticweb_migrate`)**:
    - Runs `scripts/migrate.py` automatically on `docker compose up`.
-   - Automatically detects whether the database is fresh, initialized via `init.sql`, or already tracked by Alembic, then stamps and upgrades to `0006_orders_list_index` (the history has two heads on purpose, see README section 7.4).
+   - Automatically detects whether the database is fresh, initialized via `init.sql`, or already tracked by Alembic, then stamps and upgrades to `0008_drop_redundant_indexes` (the history has two heads on purpose, see README section 7.4).
    - **No manual `alembic stamp head` required anymore!**
 2. **Dual API Replicas & Load Balancing (`nginx`)**:
    - Nginx listens on port `8000` and balances traffic across two FastAPI instances (`api` and `api_2`).
@@ -33,7 +33,7 @@ docker compose up --build -d
 Docker will automatically:
 1. Start PostgreSQL (`ticweb_postgres`) and MongoDB (`ticweb_mongo`).
 2. Wait for database healthchecks to pass.
-3. Run `ticweb_migrate` to bring the database schema to `0006_orders_list_index` (never the CP2 contract `0005`).
+3. Run `ticweb_migrate` to bring the database schema to `0008_drop_redundant_indexes` (never the CP2 contract `0005`).
 4. Start both API replicas (`ticweb_api_1`, `ticweb_api_2`).
 5. Start Nginx (`ticweb_nginx`) on port `8000`.
 
@@ -87,7 +87,7 @@ All 6 concurrency test scenarios should pass with `6 passed`.
    - Modify SQLAlchemy models in [`app/models/sql_models.py`](app/models/sql_models.py).
    - Generate migration:
      ```bash
-     docker compose exec api alembic revision -m "expand_your_feature_name" --head 0006_orders_list_index
+     docker compose exec api alembic revision -m "expand_your_feature_name" --head 0008_drop_redundant_indexes
      ```
    - Edit the generated file in `alembic/versions/`. Follow Expand-and-Contract rules: columns must be `nullable=True` or have server defaults.
    - Apply migrations (name the revision: `alembic upgrade head` refuses because there are two heads), then point
@@ -95,7 +95,7 @@ All 6 concurrency test scenarios should pass with `6 passed`.
      ```bash
      docker compose exec api alembic upgrade <your_revision_id>
      ```
-     > **CP2 warning:** revision `0005_contract_user_full_name` drops `users.full_name` and is applied by hand only (`alembic upgrade 0005_contract_user_full_name`). `compose up` stops at `0006_orders_list_index`, which hangs off `0004`, so it never applies the contract. See `docs/cp2_migration_scenario.md`.
+     > **CP2 warning:** revision `0005_contract_user_full_name` drops `users.full_name` and is applied by hand only (`alembic upgrade 0005_contract_user_full_name`). `compose up` stops at `0008_drop_redundant_indexes`, which hangs off `0004`, so it never applies the contract. See `docs/cp2_migration_scenario.md`.
 2. **Feature Flags**:
    - Check if a flag is active:
      ```python

@@ -8,9 +8,11 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from sqlalchemy.exc import DBAPIError
+from sqlalchemy.exc import TimeoutError as PoolTimeoutError
+from pymongo.errors import ConnectionFailure as MongoConnectionFailure
 
 from app.core.config import settings
-from app.core.db_errors import CONFLICT_MESSAGE, is_retryable_conflict, pgcode
+from app.core.db_errors import classify_db_error # to decide 409 / 503 / real bug 
 from app.core.database import (
     Base,
     engine,
@@ -108,11 +110,18 @@ async def validation_exception_handler(request: Request, exc: RequestValidationE
 # Safety net for concurrency: PostgreSQL aborts one side of a deadlock / serialization failure /
 # lock timeout. Nothing was written, so the client gets HTTP 409 and retries, never a 500.
 @app.exception_handler(DBAPIError)
-async def retryable_db_conflict_handler(request: Request, exc: DBAPIError):
-    if not is_retryable_conflict(exc):
+@app.exception_handler(PoolTimeoutError) 
+@app.exception_handler(MongoConnectionFailure)  # MongoDB down / unreachable: 503 + Retry-After, not a bare 500
+async def retryable_db_conflict_handler(request: Request, exc: Exception): #can handles 409 and 500
+    http_exc = classify_db_error(exc) #ask db_errors which status this is (logs the SQLSTATE / reason itself)
+    if http_exc is None:
         raise exc  # any other database error stays an unhandled server error
-    logger.warning("Retryable database conflict (SQLSTATE %s) on %s %s: answering 409", pgcode(exc), request.method, request.url.path)
-    return JSONResponse(status_code=status.HTTP_409_CONFLICT, content={"detail": CONFLICT_MESSAGE})
+    logger.warning("%s %s -> HTTP %s", request.method, request.url.path, http_exc.status_code)
+    return JSONResponse(
+        status_code=http_exc.status_code,
+        content={"detail": http_exc.detail}, 
+        headers=http_exc.headers,
+    )
 
 
 # Cross-Origin Resource Sharing (CORS)
