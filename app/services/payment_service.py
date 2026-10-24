@@ -4,13 +4,14 @@ import uuid
 from datetime import datetime, timezone
 from decimal import Decimal
 from typing import List
-from bson import ObjectId
 from fastapi import HTTPException, status
-from sqlalchemy.orm import Session, joinedload, selectinload
+from sqlalchemy import func, select, update
+from sqlalchemy.orm import Session
 from pymongo.database import Database
 
-from app.models.sql_models import Order, Payment, OutboxEvent
+from app.models.sql_models import Order, Payment, OutboxEvent, Ticket
 from app.schemas.payment import PaymentCreate
+from app.services.order_service import _release_counted_seats
 
 logger = logging.getLogger("payment_service")
 
@@ -34,11 +35,13 @@ def process_order_payment(
       - order -> confirmed.
       - tickets -> valid.
       - Transactional outbox event recorded.
+
+    Query budget: the number of tickets never changes the number of SQL round trips. Tickets are changed
+    with ONE UPDATE ... WHERE order_id = ..., never one UPDATE per ticket (tests/test_query_counts.py).
     """
     # Acquire pessimistic row-level lock on the order
     order = (
         db.query(Order)
-        .options(selectinload(Order.tickets), selectinload(Order.payments))
         .filter(Order.id == order_id)
         .with_for_update(of=Order)
         .first()
@@ -71,10 +74,21 @@ def process_order_payment(
     # Check seat hold expiry (10-minute hold window)
     if order.expires_at and order.expires_at < now:
         order.status = "expired"
-        to_release = []
-        for ticket in order.tickets:
-            ticket.status = "cancelled"
-            to_release.append((ticket.event_id, ticket.seat_zone))
+        # seats to give back, counted per (event, zone) in SQL; then every held ticket cancelled in one statement
+        to_release = {
+            (row.event_id, row.seat_zone): row.n
+            for row in db.execute(
+                select(Ticket.event_id, Ticket.seat_zone, func.count().label("n"))
+                .where(Ticket.order_id == order.id, Ticket.status == "held")
+                .group_by(Ticket.event_id, Ticket.seat_zone)
+            )
+        }
+        db.execute(
+            update(Ticket)
+            .where(Ticket.order_id == order.id, Ticket.status == "held")
+            .values(status="cancelled")
+            .execution_options(synchronize_session=False)
+        )
 
         # Record outbox event for seat release
         outbox = OutboxEvent(
@@ -88,23 +102,8 @@ def process_order_payment(
         # Commit PostgreSQL state FIRST before altering MongoDB
         db.commit()
 
-        # Release held seats in MongoDB with > 0 guard
-        for ev_id, z_name in to_release:
-            try:
-                mongo_db["events"].update_one(
-                    {
-                        "_id": ObjectId(ev_id),
-                        "zones": {
-                            "$elemMatch": {
-                                "name": z_name,
-                                "booked_count": {"$gt": 0},
-                            }
-                        },
-                    },
-                    {"$inc": {"zones.$.booked_count": -1}},
-                )
-            except Exception as exc:
-                logger.error(f"Failed to decrement MongoDB booked_count on expiry for event {ev_id} zone {z_name}: {exc}")
+        # Release held seats in MongoDB: one update per (event, zone) with a >= guard (never below zero)
+        _release_counted_seats(mongo_db, to_release)
 
         # Return HTTP 410 Gone for expired seat holds
         raise HTTPException(
@@ -137,9 +136,13 @@ def process_order_payment(
     order.status = "confirmed"
     order.expires_at = None  # Seat hold converted into confirmed reservation
 
-    # Transition all held tickets to valid
-    for ticket in order.tickets:
-        ticket.status = "valid"
+    # Transition all held tickets to valid: ONE statement for any number of tickets
+    tickets_count = db.execute(
+        update(Ticket)
+        .where(Ticket.order_id == order.id, Ticket.status == "held")
+        .values(status="valid")
+        .execution_options(synchronize_session=False)
+    ).rowcount
 
     # Transactional Outbox Pattern: Record ORDER_PAID event
     outbox = OutboxEvent(
@@ -150,27 +153,34 @@ def process_order_payment(
             "order_number": order.order_number,
             "payment_reference": payment_ref,
             "amount": float(order.total_amount),
-            "tickets_count": len(order.tickets),
+            "tickets_count": tickets_count,
         }),
         status="pending",
     )
     db.add(outbox)
 
+    # keep what the telemetry needs: after commit the order is expired and reading it would cost a SELECT
+    telemetry = {
+        "user_id": order.user_id,
+        "order_id": order.id,
+        "order_number": order.order_number,
+        "amount": float(order.total_amount),
+    }
+
     db.commit()
     db.refresh(payment)
-    db.refresh(order)
 
     # Telemetry logging to MongoDB
     try:
         mongo_db["activity_logs"].insert_one({
-            "user_id": order.user_id,
+            "user_id": telemetry["user_id"],
             "action": "order_paid",
             "resource_type": "payment",
             "resource_id": payment_ref,
             "metadata": {
-                "order_id": order.id,
-                "order_number": order.order_number,
-                "amount": float(order.total_amount),
+                "order_id": telemetry["order_id"],
+                "order_number": telemetry["order_number"],
+                "amount": telemetry["amount"],
                 "provider": payment_in.provider,
             },
             "timestamp": now,

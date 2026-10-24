@@ -43,6 +43,18 @@ else:
 LIVE_MODE = bool(API_URL)
 
 
+def sweep_expired_holds(batch_size: Optional[int] = None, max_batches: Optional[int] = None) -> int:
+    """Run the expired-hold sweeper exactly like the background worker does (own session). Returns holds expired.
+
+    POST /orders/cleanup-expired is internal and blocked by nginx, so tests call the service function directly;
+    in live mode this runs in the pytest process while the HTTP traffic hits the replicas, which is a real race.
+    """
+    from app.services.order_service import cleanup_expired_seat_holds
+
+    with SessionLocal() as session:
+        return cleanup_expired_seat_holds(session, mongo_db, batch_size=batch_size, max_batches=max_batches)
+
+
 def run_parallel(fn: Callable, items: Iterable, workers: int = 0) -> list:
     """Call fn(item) for every item at the same instant (barrier) and return results in item order."""
     items = list(items)
