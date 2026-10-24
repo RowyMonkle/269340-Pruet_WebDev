@@ -13,7 +13,7 @@ contract. So the history has two heads on purpose:
     0004 --+-- 0005_contract_user_full_name   (manual, destructive)
            +-- 0006_orders_list_index         (safe, applied by scripts/migrate.py)
 
-scripts/migrate.py upgrades to 0006. `alembic upgrade head` refuses to run ("multiple
+scripts/migrate.py upgrades along this branch (0007 and 0008 were chained after 0006; its DEFAULT_TARGET is the newest). `alembic upgrade head` refuses to run ("multiple
 heads"), which is a feature: nobody can drop full_name by accident. Name the target:
     alembic upgrade 0006_orders_list_index
     alembic upgrade 0005_contract_user_full_name
