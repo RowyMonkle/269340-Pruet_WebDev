@@ -405,11 +405,14 @@ def _release_counted_seats(mongo_db: Database, groups: dict) -> None:
 def _sweep_one_batch(db: Session, mongo_db: Database, batch_size: int) -> int:
     """Expire up to batch_size overdue holds in ONE short PostgreSQL transaction, then release their seats."""
     now = datetime.now(timezone.utc)
-    # Claim rows nobody else holds (SKIP LOCKED: never wait for an order that is being paid right now)
+    # Claim rows nobody else holds (SKIP LOCKED: never wait for an order that is being paid right now).
+    # ORDER BY expires_at, id (oldest overdue first) lets idx_orders_status_expires answer the whole query. With
+    # ORDER BY id the planner walked the primary key and filtered every order in the table (23 ms at 130k orders,
+    # growing with the table, on every tick of every replica): measured in docs/perf/index_review.md.
     claimed = db.execute(
         select(Order.id, Order.order_number)
         .where(Order.status == "pending", Order.expires_at < now)
-        .order_by(Order.id)
+        .order_by(Order.expires_at, Order.id)
         .limit(batch_size)
         .with_for_update(of=Order, skip_locked=True)
     ).all()
