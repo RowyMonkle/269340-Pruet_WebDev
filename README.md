@@ -111,7 +111,7 @@ docker compose up --build -d
 docker compose ps                           # migrate exits 0, api / api_2 show "healthy"
 docker compose exec api python seed.py      # seed both databases
 ```
-`migrate` runs `scripts/migrate.py` (Alembic, up to `0006_orders_list_index`; the CP2 contract revision is never applied automatically) once before the API starts. Requests go through nginx on port 8000, which balances across two API replicas (`api` on 8001, `api_2` on 8002).
+`migrate` runs `scripts/migrate.py` (Alembic, up to `0008_drop_redundant_indexes`; the CP2 contract revision is never applied automatically) once before the API starts. Requests go through nginx on port 8000, which balances across two API replicas (`api` on 8001, `api_2` on 8002).
 
 To ship new API code without downtime, restart the replicas one at a time:
 ```bash
@@ -269,9 +269,9 @@ Run from the repository root, with Docker Desktop running. Flag changes reach bo
 replicas within `FLAG_CACHE_SECONDS` (2 s).
 
 ```bash
-# Phase 1 Expand: applied by compose (migrate stops at 0006 on purpose, never at "head", and never applies 0005)
+# Phase 1 Expand: applied by compose (migrate stops at 0008 on purpose, never at "head", and never applies 0005)
 docker compose up --build -d
-docker compose exec api alembic current                       # 0006_orders_list_index (head); 0004 is its ancestor
+docker compose exec api alembic current                       # 0008_drop_redundant_indexes (head); 0004 is its ancestor
 docker compose exec api python seed.py --users 5000   # more rows make the backfill run many batches
 
 # Baseline + snapshot of existing users, then start the load (leave it running)
@@ -308,7 +308,7 @@ inconsistent name, p99 >= 500 ms or fewer than 20 req/s, and prints a PASS/FAIL 
 To rehearse on a second copy without touching your dev stack, set the variables listed at the top of
 `docker-compose.yml` (`STACK_PREFIX`, `NGINX_PORT`, `PG_VOLUME`, ...) and add `-p rehearsal` to every `docker compose` command.
 
-The migration history has two heads on purpose (0005 contract, 0006 CP3 index), so `alembic upgrade head` refuses to run and nobody can apply the contract by accident; name the revision you want.
+The migration history has two heads on purpose (0005 contract, 0006-0008 CP3: list index, database guards, index review), so `alembic upgrade head` refuses to run and nobody can apply the contract by accident; name the revision you want.
 Do not run a downgrade or delete volumes on a database you want to keep; rehearse on a
 disposable setup.
 
@@ -422,13 +422,15 @@ drift between the MongoDB counter and the PostgreSQL ticket count. It exits with
 ```
 0001 -> 0002 -> 0003 -> 0004 -+- 0005_contract_user_full_name   manual, destructive (CP2 Phase 5)
                               +- 0006_orders_list_index         applied by compose / scripts/migrate.py
+                                   -> 0007_db_guards            (7.11) double charge and impossible states refused by the database
+                                   -> 0008_drop_redundant_indexes (7.12) nine indexes removed, measured
 ```
 
-* `docker compose up` runs `scripts/migrate.py`, which goes to `0006_orders_list_index`: it applies everything except the contract.
-* `alembic current` shows `0006_orders_list_index (head)`, and also `0005_contract_user_full_name (head)` after the contract was applied.
+* `docker compose up` runs `scripts/migrate.py`, which goes to `0008_drop_redundant_indexes`: it applies everything except the contract.
+* `alembic current` shows `0008_drop_redundant_indexes (head)`, and also `0005_contract_user_full_name (head)` after the contract was applied.
 * `alembic upgrade head` refuses ("multiple heads"). Name the revision: `alembic upgrade 0005_contract_user_full_name`.
 * Roll back only the contract with `alembic downgrade 0005_contract_user_full_name@-1`; `alembic downgrade 0004_expand_user_names` removes both.
-* A new safe revision chains after 0006 (`alembic revision -m "..." --head 0006_orders_list_index`) and `DEFAULT_TARGET` in `scripts/migrate.py` moves to it.
+* A new safe revision chains after 0008 (`alembic revision -m "..." --head 0008_drop_redundant_indexes`) and `DEFAULT_TARGET` in `scripts/migrate.py` moves to it.
 
 **`idx_orders_user_created (user_id, created_at DESC, id DESC)`** serves "this user's newest orders, one page at a time" with no sort step and a stable page order.
 Measured with `EXPLAIN (ANALYZE, BUFFERS)` on 302,505 orders, first page of 20 rows:
@@ -535,7 +537,7 @@ The checklist form of this section (order of work, who tests what, final checkli
 
 **Natthakritta — Backend Lead & Database Architecture (Done; remaining: defence)**
 Concurrency control and its tests, the consistency audit, the booking-path fixes (deadlock, event-id spelling, idempotent replay, all-or-nothing zone reservation),
-migration 0006, `pg_stat_statements` and `scripts/pg_stats.py`, capacity numbers, the baseline in 7.7, and the resilience work in 7.9 (limits on every wait, 409 / 503 mapping, batched sweeper and outbox, nginx fail-over, `scripts/resilience_lab.py`). Remaining: review teammates' pull requests against the contracts in 7.5 and re-run everything on a clean checkout before we submit.
+migration 0006, `pg_stat_statements` and `scripts/pg_stats.py`, capacity numbers, the baseline in 7.7, and the resilience work in 7.9 (limits on every wait, 409 / 503 mapping, batched sweeper and outbox, nginx fail-over, `scripts/resilience_lab.py`), the database guards in 7.11 (one completed payment per order, status vocabularies, MongoDB seat inventory), and the index review in 7.12 (`scripts/index_report.py`, nine indexes dropped, the sweeper query fixed). Remaining: review teammates' pull requests against the contracts in 7.5 and re-run everything on a clean checkout before we submit.
 
 ### 7.7 Baseline measurements (what the code does today)
 
@@ -666,3 +668,75 @@ docker compose exec -e REQUIRE_DB=1 api pytest tests/test_query_counts.py -v -s 
   `GET /orders/summary` is the bounded version. `test_original_orders_list_payload_is_bounded` is marked `xfail` and starts passing by itself once the original endpoint is bounded.
 
 **Rule for new endpoints:** add one row to `READ_CASES` in `tests/test_query_counts.py` (a small and a large path, and the round-trip budget). A list that costs more queries for 100 rows than for 1 does not merge.
+
+
+### 7.11 Database guards: the database refuses a double charge and an impossible state (migration 0007)
+
+**The gap.** "An order is paid at most once" and "a zone is never sold beyond its capacity" were kept by application code only (a row lock, an `if` check, a conditional MongoDB update).
+A new endpoint, a script, a hand-written `UPDATE` or one future bug could break them, and `scripts/verify_consistency.py` would only notice afterwards. The rules now also live in the databases, so they hold whoever writes.
+
+| Rule | Where | Mechanism | What a violation does |
+| --- | --- | --- | --- |
+| At most one completed payment per order | PostgreSQL | partial unique index `uq_payments_order_completed (order_id) WHERE status = 'completed'` | `POST /orders/{id}/payments` answers **409** "already paid"; raw SQL gets a `UniqueViolation` |
+| Status / role vocabularies | PostgreSQL | five `CHECK` constraints: `chk_users_role`, `chk_orders_status`, `chk_tickets_status`, `chk_payments_status`, `chk_outbox_status` | the write fails; a typo like `'confirmd'` can no longer be stored |
+| `0 <= booked_count <= capacity` in every event zone | MongoDB | collection validator on `events` (`$expr`, level `moderate`, action `error`), installed at start-up by `init_mongo_indexes` | the write fails with error 121; a wrong update can no longer oversell or go negative |
+| The same capacity rule in the request body | API | `ZoneSchema` validator | `POST/PUT /events` with `booked_count > capacity` answers **400** before it reaches MongoDB |
+
+**How it was added without downtime** (`alembic/versions/0007_db_guards.py`):
+the unique index is built `CONCURRENTLY` (writes to `payments` continue); each `CHECK` is added `NOT VALID` (instant, new rows are checked at once) and then `VALIDATE`d (scans the table but blocks neither reads nor writes);
+every `ALTER` has a 3 s lock timeout and is retried, so it never queues behind a long transaction; the downgrade removes the index and the constraints.
+
+**It never "fixes" money data by itself.** Before changing anything the migration looks for rows that already break a rule (an order with two completed payments, a status outside the list).
+If it finds one it stops, changes nothing and prints which orders to look at. Rehearsed on 300,000 orders and 300,000 payments:
+with a real double charge present, `alembic upgrade 0007_db_guards` stops with `orders with more than one completed payment (double charge): order 4183 x2 ... Nothing was changed`, and the same for `orders.status has values outside [...]: ['bogus']`. After the data is cleaned it applies.
+
+**Measured** (50 users writing through nginx, 300,000 orders and 300,000 payments in the tables):
+
+| | Result |
+| --- | --- |
+| `alembic upgrade 0007_db_guards` under load | 2.9 s, **0 failures**, 150 req/s, p95 120 ms, p99 130 ms, max 291 ms (the same as without a migration) |
+| the same rules added the blocking way (plain `CREATE UNIQUE INDEX` + validated `CHECK`) | 0.85 s, also 0 failures at this size; the lock time grows with the table, the concurrent way does not |
+| `tests/test_db_guards.py` | 20 tests, in-process and through nginx with both replicas; includes 8 writers racing to insert a completed payment for one order: exactly 1 succeeds, 7 are refused |
+
+**What this means for the rest of the team**
+
+* Tests that corrupt data on purpose (to prove `verify_consistency.py` notices) must write to MongoDB with `bypass_document_validation=True`; `scripts/verify_consistency.py --repair` does the same, because the PostgreSQL count is the truth even when it is above capacity.
+* A new status or role value needs a new migration that changes the `CHECK` first, then the code.
+* A `409 ... already paid` on a payment is the system working: a second charge was refused after the first one was already saved.
+* `scripts/verify_consistency.py` keeps its double-charge check on purpose (a database that never got 0007 still needs it); `tests/test_consistency.py` proves it with a temporary table that has no index.
+
+```bash
+docker compose exec -e REQUIRE_DB=1 api pytest tests/test_db_guards.py -v
+docker compose exec -e API_URL=http://nginx -e REQUIRE_DB=1 api pytest tests/test_db_guards.py -v    # through nginx, both replicas
+```
+
+
+### 7.12 Index review: 33 indexes, nine of them cost writes and answered nothing (migration 0008)
+
+**Why look.** Every index is also written on every insert, update and delete of its table (more WAL, more disk, more cache). `scripts/index_report.py` and a load test on a realistic dataset
+(130,000 orders, 196,000 tickets, 94,000 payments, 100,000 outbox events) sorted the indexes into what must stay and what can go. Full evidence and the queries behind every verdict: [`docs/perf/index_review.md`](docs/perf/index_review.md).
+
+| Group | Indexes dropped by `0008_drop_redundant_indexes` | Evidence |
+| --- | --- | --- |
+| Redundant (leading part of another index; true whatever the workload) | `idx_orders_user_id`, `idx_orders_status`, `idx_payments_order_id`, `idx_tickets_event_id` | the covering index answers the same lookups; plans differ by 0.0-0.1 ms |
+| No reader (0 scans in the load test, no code path, dropping it changes no plan the application uses) | `idx_orders_created_at`, `idx_orders_expires_at`, `idx_payments_status`, `idx_outbox_event_type`, `idx_outbox_aggregate_id` | `EXPLAIN ANALYZE` of the application's queries with the index dropped inside a rolled-back transaction |
+
+**One real slow query was found on the way.** The expired-hold sweeper ended in `ORDER BY id LIMIT 500`, so the planner walked the whole primary key and filtered every order (23-28 ms at 130,000 orders, growing with the table, on every tick of every replica) and never used `idx_orders_status_expires`.
+It now sorts by `expires_at, id`: **0.13 ms**, using that index (`app/services/order_service.py::_sweep_one_batch`).
+
+**Measured.** Inserting 50,000 orders + 50,000 tickets + 50,000 payments + 50,000 outbox events in one transaction: 33 indexes 11.1-11.3 s and 152-154 MB of WAL, 24 indexes 10.2-10.3 s and 90-120 MB.
+Index size on the same data 140 MB -> 124 MB. Under 50 users the two schemas, run alternately, gave the same result (152 req/s, p95 65-81 ms, p99 130-140 ms, 0 failures in all four runs). Applying 0008 while 50 users were writing took 2.5 s with 0 failures.
+
+**Guards against going back.** `scripts/index_report.py` exits 1 when an index is the leading part of another one or a foreign key has no index (it only *notes* indexes with 0 scans, because 0 proves nothing on a small table).
+`tests/test_index_report.py` (11, on a throw-away schema) tests the detector; `tests/test_index_usage.py` (14) fails if a dropped index comes back, and checks that the application's queries can still use an index.
+
+```bash
+docker compose exec api python scripts/index_report.py
+docker compose exec -e REQUIRE_DB=1 api pytest tests/test_index_report.py tests/test_index_usage.py -v
+```
+
+**Rules for new work:** a new index comes with the `EXPLAIN` of the query that needs it; do not add `(a)` next to `(a, b)`; a query that sorts differently from its index cannot use the index for the order (check the plan, not the existence of the index).
+`alembic downgrade 0007_db_guards` recreates all nine indexes `CONCURRENTLY` (3.6 s on this dataset), so a wrong call is cheap to undo.
+
+**Side finding (nginx).** One `POST` in 18,192 came back `502` with "Connection reset by peer": nginx kept idle connections to a replica for 60 s while uvicorn closes them after 5 s. `keepalive_timeout 4s;` in the `upstream` block makes nginx give up first
+(reproduced on purpose: 1 failure in 200 requests before, 0 in 200 after; a small sample, so read it as consistent with the fix).
