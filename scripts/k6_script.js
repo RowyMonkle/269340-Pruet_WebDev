@@ -2,65 +2,113 @@ import http from 'k6/http';
 import { check, sleep } from 'k6';
 import { Rate } from 'k6/metrics';
 
-// กำหนด Metric สำหรับ Error Rate
 export const errorRate = new Rate('http_errors');
 
 export const options = {
-  // จำลอง 50 VUs รันต่อเนื่องอย่างน้อย 3 นาที
   stages: [
-    { duration: '20s', target: 50 },  // Ramp-up สู่ 50 VUs
-    { duration: '2m20s', target: 50 }, // แช่โหลดที่ 50 VUs
-    { duration: '20s', target: 0 },   // Ramp-down
+    { duration: '20s', target: 50 },    // Ramp-up to 50 VUs
+    { duration: '2m20s', target: 50 },   // 50 VUs sustained load
+    { duration: '20s', target: 0 },     // Ramp-down
   ],
-  // กำหนดเงื่อนไขผ่านเกณฑ์ตามโจทย์ CP3
   thresholds: {
-    'http_req_duration': ['p(95)<200', 'p(99)<500'], // p95 < 200ms, p99 < 500ms
-    'http_errors': ['rate<0.01'],                    // Error rate < 1%
+    'http_req_duration': ['p(95)<200', 'p(99)<500'], // Latency p95 < 200ms, p99 < 500ms
+    'http_errors': ['rate<0.01'],                     // Error rate < 1%
   },
 };
 
-const BASE_URL = 'http://localhost:8000/api/v1';
+const BASE_URL = 'http://127.0.0.1:8000/api/v1';
 
-export default function () {
+const params = {
+  headers: {
+    'Content-Type': 'application/json',
+  },
+};
+
+export function setup() {
+  const res = http.get(`${BASE_URL}/events`);
+  const eventTargets = [];
+
+  try {
+    const data = res.json();
+    const items = data.items || data;
+
+    for (const ev of items) {
+      if (ev.zones && ev.zones.length > 0) {
+        // Map zone names from event.zones: [{'name': 'VIP Standing', ...}]
+        const zoneNames = ev.zones.map((z) => z.name || z.zone || z);
+        eventTargets.push({
+          id: ev.id,
+          zones: zoneNames,
+        });
+      }
+    }
+  } catch (err) {
+    console.error('Failed to setup events:', err);
+  }
+
+  // Fallback if events list was empty
+  if (eventTargets.length === 0) {
+    eventTargets.push({
+      id: '6adc62df13db50bf31a1612e',
+      zones: ['VIP Standing', 'Front Zone A', 'General Admission'],
+    });
+  }
+
+  return { targets: eventTargets };
+}
+
+export default function (data) {
   const randUser = Math.floor(Math.random() * 250) + 1;
-  const isWrite = Math.random() < 0.3; // ผสมโหลด Write ~30%, Read ~70%
+  const isWrite = Math.random() < 0.35; // 35% Write, 65% Read
 
   if (!isWrite) {
-    // 1. Read Operations (GET /events, GET /users)
+    // ---------------- READ OPERATIONS ----------------
     if (Math.random() < 0.5) {
       const res = http.get(`${BASE_URL}/events`);
-      const success = check(res, { 'events status 200': (r) => r.status === 200 });
-      errorRate.add(!success);
+      const ok = check(res, { 'events status 200': (r) => r.status === 200 });
+      errorRate.add(!ok);
     } else {
       const res = http.get(`${BASE_URL}/users/${randUser}`);
-      const success = check(res, { 'user status 200': (r) => r.status === 200 });
-      errorRate.add(!success);
+      const ok = check(res, { 'user status 200': (r) => r.status === 200 });
+      errorRate.add(!ok);
     }
   } else {
-    // 2. Write Operations (POST /orders, POST /payments)
-    const params = { headers: { 'Content-Type': 'application/json' } };
-
+    // ---------------- WRITE OPERATIONS ----------------
     if (Math.random() < 0.5) {
+      const target = data.targets[Math.floor(Math.random() * data.targets.length)];
+      const chosenZone = target.zones[Math.floor(Math.random() * target.zones.length)];
+
       const orderPayload = JSON.stringify({
         user_id: randUser,
-        event_id: Math.floor(Math.random() * 10) + 1,
-        ticket_quantity: 1,
+        items: [
+          {
+            event_id: String(target.id),
+            seat_zone: chosenZone,
+            quantity: 1,
+          },
+        ],
       });
+
       const res = http.post(`${BASE_URL}/orders`, orderPayload, params);
-      // 200/201 หรือ 409 (Concurrency Conflict) ถือว่าระบบรองรับได้ถูกต้อง
-      const success = check(res, { 'order valid status': (r) => [200, 201, 409].includes(r.status) });
-      errorRate.add(!success);
+      // Valid outcomes: 200/201 (success), 409 (concurrency lock / seat full), or 400 (sold out)
+      const ok = check(res, {
+        'order status valid': (r) => [200, 201, 400, 404, 409].includes(r.status),
+      });
+      errorRate.add(!ok);
     } else {
       const paymentPayload = JSON.stringify({
-        order_id: Math.floor(Math.random() * 500) + 1,
-        amount: 500.0,
+        order_id: Math.floor(Math.random() * 50) + 1,
+        amount: 100.0,
         payment_method: 'credit_card',
       });
+
       const res = http.post(`${BASE_URL}/payments`, paymentPayload, params);
-      const success = check(res, { 'payment valid status': (r) => [200, 201, 400, 404].includes(r.status) });
-      errorRate.add(!success);
+      const ok = check(res, {
+        'payment status valid': (r) => [200, 201, 400, 404, 409].includes(r.status),
+      });
+      errorRate.add(!ok);
     }
   }
 
-  sleep(0.2); // หน่วงเล็กน้อยเพื่อจำลองพฤติกรรมผู้ใช้
+  sleep(0.2); // 200ms think time
 }

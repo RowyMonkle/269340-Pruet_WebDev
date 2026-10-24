@@ -1,160 +1,364 @@
 {
+    "root_group": {
+        "name": "",
+        "path": "",
+        "id": "d41d8cd98f00b204e9800998ecf8427e",
+        "groups": {},
+        "checks": {
+                "user status 200": {
+                    "name": "user status 200",
+                    "path": "::user status 200",
+                    "id": "aac8d1d6e0b8ab785969e3919333cda0",
+                    "passes": 12162,
+                    "fails": 0
+                },
+                "order status valid": {
+                    "id": "4480cae28248750905c93c32e57ad273",
+                    "passes": 6708,
+                    "fails": 0,
+                    "name": "order status valid",
+                    "path": "::order status valid"
+                },
+                "events status 200": {
+                    "name": "events status 200",
+                    "path": "::events status 200",
+                    "id": "c9504a49201db4670124d27003d376dd",
+                    "passes": 12197,
+                    "fails": 0
+                },
+                "payment status valid": {
+                    "id": "1639cde46799435f6927e38f0e6ecc1b",
+                    "passes": 6684,
+                    "fails": 1,
+                    "name": "payment status valid",
+                    "path": "::payment status valid"
+                }
+            }
+    },
     "metrics": {
-        "http_req_blocked": {
-            "min": 0.001,
-            "med": 0.005,
-            "max": 24.658,
-            "p(90)": 0.01,
-            "p(95)": 0.016,
-            "avg": 0.015911366730569497
+        "checks": {
+            "passes": 37751,
+            "fails": 1,
+            "value": 0.9999735113371477
         },
-        "http_req_sending": {
-            "max": 22.564,
-            "p(90)": 0.036,
-            "p(95)": 0.056,
-            "avg": 0.035913617293210465,
-            "min": 0.002,
-            "med": 0.016
+        "iteration_duration": {
+            "med": 204.80225000000002,
+            "max": 700.296,
+            "p(90)": 221.27788280000001,
+            "p(95)": 243.13993734999994,
+            "avg": 212.27320490466843,
+            "min": 200.740333
         },
-        "http_req_waiting": {
-            "min": 0.5,
-            "med": 5.156,
-            "max": 856.62,
-            "p(90)": 41.983,
-            "p(95)": 83.1305,
-            "avg": 21.627717568280957
+        "http_req_connecting": {
+            "avg": 0.0004925966148385558,
+            "min": 0,
+            "med": 0,
+            "max": 1.352,
+            "p(90)": 0,
+            "p(95)": 0
         },
         "http_req_duration{expected_response:true}": {
-            "avg": 26.12890284623946,
-            "min": 1.642,
-            "med": 6.798,
-            "max": 856.804,
-            "p(90)": 52.4305,
-            "p(95)": 101.12524999999991
+            "p(95)": 48.767449999999705,
+            "avg": 13.414172299472176,
+            "min": 1.496,
+            "med": 5.104,
+            "max": 497.778,
+            "p(90)": 23.52920000000001
         },
-        "checks": {
-            "passes": 30512,
-            "fails": 5479,
-            "value": 0.8477674974299131
-        },
-        "http_req_receiving": {
-            "avg": 0.3267783890417106,
-            "min": 0.006,
-            "med": 0.072,
-            "max": 149.723,
-            "p(90)": 0.55,
-            "p(95)": 1.003
-        },
-        "data_received": {
-            "count": 329168136,
-            "rate": 1828732.6024624533
-        },
-        "vus_max": {
-            "min": 50,
-            "max": 50,
-            "value": 50
+        "http_req_sending": {
+            "min": 0.002,
+            "med": 0.015,
+            "max": 22.933,
+            "p(90)": 0.03,
+            "p(95)": 0.038,
+            "avg": 0.026176012502315653
         },
         "http_req_failed": {
-            "passes": 10835,
-            "fails": 25156,
-            "value": 0.30104748409324555
+            "passes": 6685,
+            "fails": 31068,
+            "value": 0.1770720207665616
+        },
+        "data_received": {
+            "rate": 1792405.0223896473,
+            "count": 322844130
+        },
+        "http_req_waiting": {
+            "min": 0.516,
+            "med": 4.062,
+            "max": 497.629,
+            "p(90)": 20.0786,
+            "p(95)": 42.04459999999994,
+            "avg": 11.532047016131044
+        },
+        "http_req_receiving": {
+            "p(95)": 0.145,
+            "avg": 0.07445477180621314,
+            "min": 0.006,
+            "med": 0.045,
+            "max": 11.287,
+            "p(90)": 0.108
+        },
+        "iterations": {
+            "rate": 209.59611192328,
+            "count": 37752
+        },
+        "vus_max": {
+            "max": 50,
+            "value": 50,
+            "min": 50
+        },
+        "http_errors": {
+            "passes": 1,
+            "fails": 37751,
+            "thresholds": {
+                "rate<0.01": false
+            },
+            "value": 0.000026488662852299217
         },
         "data_sent": {
-            "count": 4185872,
-            "rate": 23255.108131531644
+            "rate": 27759.70365401607,
+            "count": 5000018
+        },
+        "http_reqs": {
+            "count": 37753,
+            "rate": 209.6016638440239
+        },
+        "http_req_blocked": {
+            "avg": 0.009992954202312651,
+            "min": 0,
+            "med": 0.004,
+            "max": 14.975,
+            "p(90)": 0.008,
+            "p(95)": 0.01
+        },
+        "http_req_duration": {
+            "avg": 11.632677800439756,
+            "min": 0.551,
+            "med": 4.157,
+            "max": 497.778,
+            "p(90)": 20.215400000000002,
+            "p(95)": 42.19219999999998,
+            "thresholds": {
+                "p(95)<200": false,
+                "p(99)<500": false
+            }
         },
         "vus": {
             "value": 1,
             "min": 1,
             "max": 50
         },
-        "http_req_duration": {
-            "p(95)": 84.21849999999995,
-            "avg": 21.990409574615946,
-            "min": 0.526,
-            "med": 5.39,
-            "max": 856.804,
-            "p(90)": 42.919,
-            "thresholds": {
-                "p(95)<200": false,
-                "p(99)<500": false
-            }
-        },
-        "iterations": {
-            "count": 35991,
-            "rate": 199.95226723654127
-        },
-        "http_req_connecting": {
-            "min": 0,
-            "med": 0,
-            "max": 2.175,
-            "p(90)": 0,
-            "p(95)": 0,
-            "avg": 0.0006104859548220387
-        },
         "http_req_tls_handshaking": {
-            "min": 0,
             "med": 0,
             "max": 0,
             "p(90)": 0,
             "p(95)": 0,
-            "avg": 0
-        },
-        "http_reqs": {
-            "count": 35991,
-            "rate": 199.95226723654127
-        },
-        "iteration_duration": {
-            "min": 200.68025,
-            "med": 206.031208,
-            "max": 1057.106083,
-            "p(90)": 243.721584,
-            "p(95)": 285.3140835,
-            "avg": 222.69724073349246
-        },
-        "http_errors": {
-            "passes": 5479,
-            "fails": 30512,
-            "thresholds": {
-                "rate<0.01": true
-            },
-            "value": 0.15223250257008697
+            "avg": 0,
+            "min": 0
         }
     },
-    "root_group": {
-        "path": "",
-        "id": "d41d8cd98f00b204e9800998ecf8427e",
-        "groups": {},
-        "checks": {
-                "events status 200": {
-                    "fails": 0,
-                    "name": "events status 200",
-                    "path": "::events status 200",
-                    "id": "c9504a49201db4670124d27003d376dd",
-                    "passes": 12605
-                },
-                "payment valid status": {
-                    "name": "payment valid status",
-                    "path": "::payment valid status",
-                    "id": "32eace5b9e0d1d290fa9e0e53b42ce5a",
-                    "passes": 5356,
-                    "fails": 0
-                },
-                "user status 200": {
-                    "id": "aac8d1d6e0b8ab785969e3919333cda0",
-                    "passes": 12551,
-                    "fails": 0,
-                    "name": "user status 200",
-                    "path": "::user status 200"
-                },
-                "order valid status": {
-                    "path": "::order valid status",
-                    "id": "ae41bb6e35f4c4b80c7523a816509b68",
-                    "passes": 0,
-                    "fails": 5479,
-                    "name": "order valid status"
-                }
+    "setup_data": {
+        "targets": [
+            {
+                "id": "6adc62df13db50bf31a1612e",
+                "zones": [
+                    "VIP Standing",
+                    "Front Zone A",
+                    "Middle Zone B",
+                    "General Admission",
+                    "Balcony Tier 1"
+                ]
             },
-        "name": ""
+            {
+                "id": "6adc62df13db50bf31a16179",
+                "zones": [
+                    "VIP Standing",
+                    "Front Zone A",
+                    "Middle Zone B",
+                    "General Admission",
+                    "Balcony Tier 1"
+                ]
+            },
+            {
+                "id": "6adc62df13db50bf31a16160",
+                "zones": [
+                    "VIP Standing",
+                    "Front Zone A",
+                    "Middle Zone B",
+                    "General Admission",
+                    "Balcony Tier 1"
+                ]
+            },
+            {
+                "id": "6adc62df13db50bf31a1617d",
+                "zones": [
+                    "VIP Standing",
+                    "Front Zone A",
+                    "Middle Zone B",
+                    "General Admission",
+                    "Balcony Tier 1"
+                ]
+            },
+            {
+                "id": "6adc62df13db50bf31a16104",
+                "zones": [
+                    "VIP Standing",
+                    "Front Zone A",
+                    "Middle Zone B",
+                    "General Admission",
+                    "Balcony Tier 1"
+                ]
+            },
+            {
+                "zones": [
+                    "VIP Standing",
+                    "Front Zone A",
+                    "Middle Zone B",
+                    "General Admission",
+                    "Balcony Tier 1"
+                ],
+                "id": "6adc62df13db50bf31a160fc"
+            },
+            {
+                "id": "6adc62df13db50bf31a1618e",
+                "zones": [
+                    "VIP Standing",
+                    "Front Zone A",
+                    "Middle Zone B",
+                    "General Admission",
+                    "Balcony Tier 1"
+                ]
+            },
+            {
+                "zones": [
+                    "VIP Standing",
+                    "Front Zone A",
+                    "Middle Zone B",
+                    "General Admission",
+                    "Balcony Tier 1"
+                ],
+                "id": "6adc62df13db50bf31a1610a"
+            },
+            {
+                "id": "6adc62df13db50bf31a16187",
+                "zones": [
+                    "VIP Standing",
+                    "Front Zone A",
+                    "Middle Zone B",
+                    "General Admission",
+                    "Balcony Tier 1"
+                ]
+            },
+            {
+                "id": "6adc62df13db50bf31a16178",
+                "zones": [
+                    "VIP Standing",
+                    "Front Zone A",
+                    "Middle Zone B",
+                    "General Admission",
+                    "Balcony Tier 1"
+                ]
+            },
+            {
+                "id": "6adc62df13db50bf31a16134",
+                "zones": [
+                    "VIP Standing",
+                    "Front Zone A",
+                    "Middle Zone B",
+                    "General Admission",
+                    "Balcony Tier 1"
+                ]
+            },
+            {
+                "id": "6adc62df13db50bf31a160ee",
+                "zones": [
+                    "VIP Standing",
+                    "Front Zone A",
+                    "Middle Zone B",
+                    "General Admission",
+                    "Balcony Tier 1"
+                ]
+            },
+            {
+                "id": "6adc62df13db50bf31a16144",
+                "zones": [
+                    "VIP Standing",
+                    "Front Zone A",
+                    "Middle Zone B",
+                    "General Admission",
+                    "Balcony Tier 1"
+                ]
+            },
+            {
+                "id": "6adc62df13db50bf31a160d3",
+                "zones": [
+                    "VIP Standing",
+                    "Front Zone A",
+                    "Middle Zone B",
+                    "General Admission",
+                    "Balcony Tier 1"
+                ]
+            },
+            {
+                "zones": [
+                    "VIP Standing",
+                    "Front Zone A",
+                    "Middle Zone B",
+                    "General Admission",
+                    "Balcony Tier 1"
+                ],
+                "id": "6adc62df13db50bf31a1611c"
+            },
+            {
+                "id": "6adc62df13db50bf31a16154",
+                "zones": [
+                    "VIP Standing",
+                    "Front Zone A",
+                    "Middle Zone B",
+                    "General Admission",
+                    "Balcony Tier 1"
+                ]
+            },
+            {
+                "id": "6adc62df13db50bf31a160d8",
+                "zones": [
+                    "VIP Standing",
+                    "Front Zone A",
+                    "Middle Zone B",
+                    "General Admission",
+                    "Balcony Tier 1"
+                ]
+            },
+            {
+                "zones": [
+                    "VIP Standing",
+                    "Front Zone A",
+                    "Middle Zone B",
+                    "General Admission",
+                    "Balcony Tier 1"
+                ],
+                "id": "6adc62df13db50bf31a16166"
+            },
+            {
+                "id": "6adc62df13db50bf31a1614c",
+                "zones": [
+                    "VIP Standing",
+                    "Front Zone A",
+                    "Middle Zone B",
+                    "General Admission",
+                    "Balcony Tier 1"
+                ]
+            },
+            {
+                "id": "6adc62df13db50bf31a160dc",
+                "zones": [
+                    "VIP Standing",
+                    "Front Zone A",
+                    "Middle Zone B",
+                    "General Admission",
+                    "Balcony Tier 1"
+                ]
+            }
+        ]
     }
 }
