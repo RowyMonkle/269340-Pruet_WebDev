@@ -4,7 +4,7 @@ from pymongo.database import Database
 
 from app.core.database import get_mongo_db
 from app.schemas.common import PaginatedResponse
-from app.schemas.event import EventCreate, EventResponse
+from app.schemas.event import EventCreate, EventResponse, EventSummary
 from app.services.event_service import (
     create_event as create_event_svc,
     get_events_paginated,
@@ -20,10 +20,14 @@ products_router = APIRouter(prefix="/products", tags=["Products / Catalog Alias 
 
 @router.get(
     "",
-    response_model=PaginatedResponse[EventResponse],
+    response_model=PaginatedResponse[EventSummary],
     status_code=status.HTTP_200_OK,
     summary="Fetch Paginated Event Catalog",
-    description="Retrieve paginated concert and festival catalog from MongoDB using field projections.",
+    description=(
+        "Paginated catalog of event SUMMARIES (title, artist and venue names, date, status, lowest price, seats left), "
+        "computed inside MongoDB: two commands whatever the page size. Zones, bio, tags and dynamic attributes are not "
+        "included: fetch GET /events/{id} for the full document."
+    ),
 )
 def list_events(
     page: int = Query(1, ge=1, description="Page number"),
@@ -40,7 +44,7 @@ def list_events(
         status_filter=status,
     )
     total_pages = (total + page_size - 1) // page_size if total > 0 else 0
-    return PaginatedResponse[EventResponse](
+    return PaginatedResponse[EventSummary](
         items=items,
         total=total,
         page=page,
@@ -82,7 +86,7 @@ products_router.add_api_route(
     "",
     endpoint=list_events,
     methods=["GET"],
-    response_model=PaginatedResponse[EventResponse],
+    response_model=PaginatedResponse[EventSummary],
     status_code=status.HTTP_200_OK,
     summary="Fetch Paginated Catalog (Alias)",
     description="Catalog alias for GET /api/v1/events.",

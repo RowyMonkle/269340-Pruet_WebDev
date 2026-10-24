@@ -164,10 +164,10 @@ What each one proves, and which mechanism it protects, is listed in [section 7.2
 | `POST` | `/api/v1/users` | PostgreSQL | `201`, `400`, `409` | Register user account (strictly forces fan role, hashes password) |
 | `GET` | `/api/v1/users/{id}` | PostgreSQL | `200`, `404` | Fetch user details via `.options(load_only(...))` projection |
 | `GET` | `/api/v1/users` | PostgreSQL | `200` | Paginated list of users (optimized projection, zero N+1 queries) |
-| `GET` | `/api/v1/events` | MongoDB | `200` | Fetch paginated concert/festival catalog with field projections |
+| `GET` | `/api/v1/events` | MongoDB | `200`, `503` | Paginated catalog of event **summaries** (title, artist and venue names, date, status, `min_price`, `seats_left`), computed inside MongoDB; the full document is `GET /events/{id}` |
 | `POST` | `/api/v1/events` | MongoDB | `201`, `400` | Create event document with nested dynamic attributes |
 | `GET` | `/api/v1/events/{id}` | MongoDB | `200`, `404` | Fetch single event document by its ObjectId |
-| `GET` | `/api/v1/products` | MongoDB | `200` | Catalog alias for /events |
+| `GET` | `/api/v1/products` | MongoDB | `200`, `503` | Catalog alias for /events (same summaries) |
 | `POST` | `/api/v1/products` | MongoDB | `201` | Catalog alias for /events |
 | `POST` | `/api/v1/orders` | Dual-DB | `201`, `400`, `404`, `409`, `503` | Atomic checkout with 10-min seat hold, `Idempotency-Key` header support |
 | `GET` | `/api/v1/orders/summary?user_id=&limit=&offset=` | PostgreSQL | `200`, `404` | Newest-first order summaries with `ticket_count` and `paid_amount` computed in SQL, paginated |
@@ -401,11 +401,12 @@ docker compose exec api python scripts/verify_consistency.py --repair   # resets
 | --- | ---: | --- | --- |
 | `tests/test_concurrency.py` | 22 | PostgreSQL + MongoDB | every row of the table in 7.2 (3 tests inspect the server process and run in-process only) |
 | `tests/test_consistency.py` | 8 | PostgreSQL + MongoDB | `verify_consistency.py` passes on honest data and catches drift, overselling, double charge, dead orders |
+| `tests/test_query_counts.py` | 20 | PostgreSQL + MongoDB | section 7.10: round trips stay constant while the data grows (no N+1), payloads bounded; the counter is tested too |
 | `tests/test_resilience.py` | 24 | PostgreSQL + MongoDB | section 7.9: a stuck lock, a busy pool, a dead MongoDB, the sweeper, the outbox, the worker, nginx (real mechanisms, not faked errors) |
 | `tests/test_db_errors.py` | 16 | none | SQLSTATE and driver errors to HTTP 409 / 503 mapping |
 | `tests/test_users_api.py`, `test_user_migration.py`, `test_cp2_scripts.py` | 61 | mostly none | CP2 (dual-write, backfill, traffic generator) |
 
-In total 131 tests: 130 pass in-process, 1 more runs only through nginx (`API_URL=http://nginx`).
+In total 151 tests: 149 pass in-process, 1 more runs only through nginx (`API_URL=http://nginx`) and 1 is a documented `xfail` (7.10).
 
 `tests/support.py` holds the helpers (client, users and events factory, parallel runner, cleanup). New tests should use it.
 `python tests/test_concurrency.py` runs the concurrency file as a script, like the example in the spec.
@@ -461,7 +462,7 @@ Beyond about 60 requests in flight (2 x 30 connections) a request waits for a co
 3. **Summary vs detail.** A list item is a summary schema without nested tickets or payments. A detail endpoint may include children, still without lazy loads.
 4. **No Mongo or PostgreSQL call inside a loop over tickets or rows.** Batch with `$in`, `bulk_write`, JOIN or aggregation.
 5. **Errors:** collision -> 409 (`app/core/db_errors.py`), validation -> 400, missing -> 404, expired -> 410. Pool exhaustion or timeout -> 503 with `Retry-After`. A request that can be answered must never be a 500.
-6. **Round trips are the budget.** `POST /orders` runs 7 SQL statements, three of them (`refresh`, lazy `tickets`, lazy `payments`) only exist to serialise the response; `POST /orders/{id}/payments` runs 11. Measure with `pg_stats.py` before and after.
+6. **Round trips are the budget.** `POST /orders` runs 7 SQL statements, three of them (`refresh`, lazy `tickets`, lazy `payments`) only exist to serialise the response; `POST /orders/{id}/payments` runs 6 whatever the number of tickets (it ran 11 + one per ticket before 7.10). Count with `tests/support.py: QueryCounter`, measure the database side with `pg_stats.py`.
 7. **Load tests live in `loadtest/`** and use Locust; results go to `docs/perf/` (HTML report, CSV, charts). Raw scratch output goes to `loadtest/out/` (ignored by git).
 8. **Counting SQL statements in a test:**
 
@@ -492,8 +493,8 @@ The checklist form of this section (order of work, who tests what, final checkli
    ```
 
    `GET /orders/{id}` stays the detail view (tickets and payments) but with projected columns and no lazy loads.
-2. `GET /api/v1/events` list becomes a **summary** (id, title, category, date_time, venue name and city, status, lowest price, seats left) without `dynamic_attributes` and `artist.bio`. Today 100 events weigh 126 KB.
-3. `tests/test_query_counts.py` (snippet in 7.5): every list endpoint runs the same number of SQL statements for 1 and for 300 rows, and the payload stays below a bound you choose.
+2. `GET /api/v1/events` list is a **summary** (id, title, category, artist and venue names, date_time, status, lowest price, seats left) without zones, bio, tags and `dynamic_attributes`: done as `EventSummary` (7.10), 100 events weigh 31 KB instead of 124 KB.
+3. `tests/test_query_counts.py`: done (7.10). New list endpoints add a row to `READ_CASES`.
 4. Trim the write path: drop the three response-only SELECTs on `POST /orders` and the four on payments (build the response from the objects you already hold); consider moving the activity-log insert to `BackgroundTasks`.
 5. Errors per contract 5 in 7.5 (503 + `Retry-After` for pool timeouts). Keep the status table of 7.2.
 6. Web design: a booking demo page in `frontend/` that shows what a `409` means to the user ("someone took it, pick another seat") and lists orders page by page. Coordinate with Pandara.
@@ -623,3 +624,45 @@ docker compose exec api python seed.py --users 250   # only if you want fresh da
 ```
 
 **Try it yourself** (disposable stack only, it stops databases): `python scripts/resilience_lab.py --prefix rehearsal --url http://localhost:18000 --network rehearsal_default --image rehearsal_api:local all`
+
+
+### 7.10 Query audit: no N+1, summaries instead of entity graphs
+
+**What was checked and how.** `tests/test_query_counts.py` counts the database round trips one request makes while the amount of data grows by
+a factor of 50 to 300, and fails if the count changes. The counter is tested first, because it has to tell three things apart:
+a multi-row `INSERT ... VALUES (..),(..)` built by SQLAlchemy is **one** round trip; an `executemany` of N rows is **N**, because psycopg2 sends the rows one by one
+(this is what an N+1 looks like on a write path); a pymongo call that calls another public method itself (`find_one` -> `find`, `count_documents` -> `aggregate`) counts **once**.
+
+```bash
+docker compose exec -e REQUIRE_DB=1 api pytest tests/test_query_counts.py -v -s     # prints the table below
+```
+
+**Result (round trips per request; the data grows from the first size to the second):**
+
+| Endpoint | Grows | SQL | MongoDB | Payload at the large size |
+| --- | --- | ---: | ---: | --- |
+| `GET /users` | page 1 -> 100 users | 2 -> 2 | - | 24 KB (plain columns, no `hashed_password`) |
+| `GET /users/{id}` | - | 1 | - | 0.3 KB |
+| `GET /orders/summary` | 1 -> 300 orders (limit 20) | 2 -> 2 | - | 3.8 KB |
+| `GET /orders/{id}/summary` | 1 -> 50 tickets and payments | 1 -> 1 | - | 0.2 KB |
+| `GET /orders/{id}` | 1 -> 50 tickets and payments | 1 -> 1 | - | 20.8 KB (the full detail) |
+| `GET /orders/{id}/payments` | 1 -> 50 payments | 2 -> 2 | - | 10.9 KB |
+| `GET /events`, `GET /products` | page 1 -> 100 events | - | 2 -> 2 | **31 KB** (was 124 KB) |
+| `POST /orders` | 1 -> 20 tickets | 7 -> 7 | 3 -> 3 | - |
+| `POST /orders/{id}/payments` | 1 -> 20 tickets | **11 -> 30** before, **6 -> 6** now | 1 | - |
+| `POST /orders/{id}/payments` on an expired hold | 1 -> 20 tickets | constant (was one UPDATE per ticket) | 1 | - |
+| `GET /orders?user_id=` (original endpoint) | 1 -> 300 orders | 1 -> 1 | - | 326 KB, unbounded (see below) |
+
+**Findings**
+
+* **No read endpoint has an N+1.** Every list and detail endpoint runs a constant number of statements (relations are loaded with one JOIN or one `IN` query, counts and sums are computed in SQL).
+* **One real N+1 existed, on a write path, and is fixed:** paying an order ran `UPDATE tickets ... WHERE id = ?` once per ticket (11 round trips for 1 ticket, 30 for 20). It is now one
+  `UPDATE tickets ... WHERE order_id = ? AND status = 'held'`, the order's tickets and payments are no longer loaded just to be iterated, and the same fix applies to the expired-hold branch,
+  which releases seats in MongoDB with one update per (event, zone). `tests/test_query_counts.py::test_payment_costs_the_same_round_trips_for_1_and_for_20_tickets` fails on the old code (11 -> 30) and passes now.
+* **Projection (no whole entities, no unneeded columns):** `GET /users` and `GET /users/{id}` select plain columns (rows, nothing for the session to track);
+  `GET /orders/summary` computes `ticket_count` and `paid_amount` in SQL; `GET /events` returns an `EventSummary` computed inside MongoDB (one `$project` stage derives `min_price` and `seats_left`), so zones, bio, tags and
+  dynamic attributes never leave the database. The complete document is still `GET /events/{id}`.
+* **Still open:** the original `GET /orders?user_id=` returns whole orders with their tickets and payments and has no pagination (326 KB for 300 orders). The number of queries is constant, the payload is not.
+  `GET /orders/summary` is the bounded version. `test_original_orders_list_payload_is_bounded` is marked `xfail` and starts passing by itself once the original endpoint is bounded.
+
+**Rule for new endpoints:** add one row to `READ_CASES` in `tests/test_query_counts.py` (a small and a large path, and the round-trip budget). A list that costs more queries for 100 rows than for 1 does not merge.

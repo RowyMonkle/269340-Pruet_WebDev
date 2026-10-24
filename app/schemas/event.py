@@ -25,6 +25,32 @@ class VenueSchema(BaseModel):
     address: Optional[str] = None
 
 
+class ArtistSummary(BaseModel):
+    name: str = ""
+    genre: str = ""
+
+
+class VenueSummary(BaseModel):
+    name: str = ""
+    city: str = ""
+
+
+class EventSummary(BaseModel):
+    """One row of the catalog list: what a card needs, no zones, bio, tags or dynamic attributes.
+
+    The full document is GET /events/{id} (EventResponse).
+    """
+    id: str
+    title: str
+    category: str = "Concert"
+    artist: ArtistSummary = ArtistSummary()
+    venue: VenueSummary = VenueSummary()
+    date_time: Optional[datetime] = None
+    status: str = "upcoming"
+    min_price: Optional[float] = Field(None, description="Lowest zone price, null when the event has no zones")
+    seats_left: int = Field(0, ge=0, description="Sum over zones of capacity - booked_count (never below 0)")
+
+
 class EventCreate(BaseModel):
     title: str = Field(..., min_length=3, max_length=200, description="Event title")
     category: str = Field(default="Concert", description="Concert, Music Festival, Live Performance")
