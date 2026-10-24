@@ -1,6 +1,6 @@
 from datetime import datetime
 from typing import Any, Dict, List, Optional
-from pydantic import BaseModel, Field, ConfigDict
+from pydantic import BaseModel, Field, ConfigDict, model_validator
 
 
 class ZoneSchema(BaseModel):
@@ -8,6 +8,13 @@ class ZoneSchema(BaseModel):
     price: float = Field(..., ge=0.0, description="Ticket price for this zone")
     capacity: int = Field(..., gt=0, description="Maximum seats/tickets in this zone")
     booked_count: int = Field(default=0, ge=0, description="Currently reserved or booked tickets")
+
+    @model_validator(mode="after")
+    def booked_count_within_capacity(self):
+        # the same rule the MongoDB validator enforces: answer 400 here instead of failing at the database
+        if self.booked_count > self.capacity:
+            raise ValueError("booked_count must not exceed capacity")
+        return self
 
 
 class ArtistSchema(BaseModel):

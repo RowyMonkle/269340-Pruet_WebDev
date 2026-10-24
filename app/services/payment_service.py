@@ -6,14 +6,18 @@ from decimal import Decimal
 from typing import List
 from fastapi import HTTPException, status
 from sqlalchemy import func, select, update
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 from pymongo.database import Database
 
 from app.models.sql_models import Order, Payment, OutboxEvent, Ticket
 from app.schemas.payment import PaymentCreate
-from app.services.order_service import _release_counted_seats
+from app.services.order_service import _release_counted_seats, _violated_constraint
 
 logger = logging.getLogger("payment_service")
+
+# partial unique index (migration 0007): at most one completed payment per order
+COMPLETED_PAYMENT_CONSTRAINT = "uq_payments_order_completed"
 
 
 def process_order_payment(
@@ -167,7 +171,19 @@ def process_order_payment(
         "amount": float(order.total_amount),
     }
 
-    db.commit()
+    try:
+        db.commit()
+    except IntegrityError as exc:
+        db.rollback()
+        if COMPLETED_PAYMENT_CONSTRAINT in _violated_constraint(exc):
+            # The application check passed but another completed payment already exists: the DATABASE refused the
+            # second charge (a request that slipped past the row lock, a script, a future code path). Nothing was saved.
+            logger.warning("Double charge blocked by the database for order %s", telemetry["order_id"])
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail=f"Order {telemetry['order_number']} is already paid and confirmed",
+            )
+        raise
     db.refresh(payment)
 
     # Telemetry logging to MongoDB
