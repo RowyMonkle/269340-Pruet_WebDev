@@ -2,9 +2,12 @@
 
 - scripts/backfill.py: the target-name rule must match the API and never lose a stored part.
 - scripts/traffic_gen.py: response checks and the PASS/FAIL decision.
+- both scripts start from the command line (a file cut off before its main block must not pass).
 """
 import importlib.util
 import os
+import subprocess
+import sys
 
 import pytest
 
@@ -44,6 +47,19 @@ def test_backfill_never_returns_null():
     for args in [(None, None, None), ("", None, None), ("Solo", None, None)]:
         first, last = backfill.names_for(*args)
         assert first is not None and last is not None
+
+
+@pytest.mark.parametrize("script, option", [("backfill.py", "--dry-run"), ("traffic_gen.py", "--duration")])
+def test_cli_starts_and_prints_its_usage(script, option):
+    """A file that lost its `if __name__ == "__main__"` block still imports, so the tests above pass, but running it
+    exits 0 and prints nothing: a backfill that "succeeds" without migrating anyone (it reached main once).
+    `--help` leaves before any database or network connection, so no running stack is needed."""
+    result = subprocess.run(
+        [sys.executable, os.path.join(ROOT, "scripts", script), "--help"],
+        capture_output=True, text=True, timeout=60,
+    )
+    assert result.returncode == 0, result.stderr
+    assert option in result.stdout, f"{script} printed no usage: is the `if __name__ == '__main__'` block missing?"
 
 
 def user_body(**over):

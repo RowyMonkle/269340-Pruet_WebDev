@@ -11,7 +11,13 @@ Safe to run against a live database:
     batch, so a stopped job resumes where it left off
   * a pause between batches, lock_timeout and statement_timeout keep it from stalling traffic
 
-Name rule: first_name = text before the first whitespace, last_name = the rest.
+Name rule (same as the API and the verification queries): first_name = text before the
+first whitespace, last_name = the rest, '' for a single word. Never NULL after the backfill.
+
+Usage (inside the api container):
+  python scripts/backfill.py --dry-run          # count only, change nothing
+  python scripts/backfill.py                    # run / resume
+  python scripts/backfill.py --restart          # ignore the checkpoint, scan from id 0
 """
 import argparse
 import os
@@ -136,6 +142,15 @@ def main(argv=None) -> int:
             remaining = count_remaining(conn)
         if remaining == 0:
             break
+        # rows skipped because a request held their lock, or created below the cursor
         print(f"[backfill] sweep {sweep} done, {remaining} row(s) left, scanning again from id 0")
         last_id = 0
-        time
+        time.sleep(1)
+
+    print(f"[backfill] finished in {time.time() - started:.1f}s: {total} row(s) updated, {remaining} remaining")
+    engine.dispose()
+    return 0 if remaining == 0 else 1
+
+
+if __name__ == "__main__":
+    sys.exit(main())
