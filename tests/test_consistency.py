@@ -19,6 +19,7 @@ from tests.support import build_environment, client, post_order  # noqa: E402
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 _spec = importlib.util.spec_from_file_location("verify_consistency", os.path.join(ROOT, "scripts", "verify_consistency.py"))
+assert _spec is not None and _spec.loader is not None  # spec_from_file_location may return None
 audit = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(audit)
 

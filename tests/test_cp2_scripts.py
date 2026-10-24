@@ -13,6 +13,7 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 def load(name: str):
     spec = importlib.util.spec_from_file_location(name, os.path.join(ROOT, "scripts", f"{name}.py"))
+    assert spec is not None and spec.loader is not None  # spec_from_file_location may return None
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
     return module
