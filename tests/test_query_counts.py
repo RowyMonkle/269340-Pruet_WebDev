@@ -158,7 +158,7 @@ READ_CASES = [
     ("GET /orders/{id}/summary", lambda d: (f"/api/v1/orders/{d['children'][1]}/summary", "1 ticket + 1 payment", f"/api/v1/orders/{d['children'][50]}/summary", "50 tickets + 50 payments"), 1, 0),
     ("GET /orders/{id} (detail)", lambda d: (f"/api/v1/orders/{d['children'][1]}", "1 ticket + 1 payment", f"/api/v1/orders/{d['children'][50]}", "50 tickets + 50 payments"), 1, 0),
     ("GET /orders/{id}/payments", lambda d: (f"/api/v1/orders/{d['children'][1]}/payments", "1 payment", f"/api/v1/orders/{d['children'][50]}/payments", "50 payments"), 2, 0),
-    ("GET /orders?user_id= (original)", lambda d: (f"/api/v1/orders?user_id={d['users_with'][1]}", "1 order", f"/api/v1/orders?user_id={d['users_with'][300]}", "300 orders"), 1, 0),
+    ("GET /orders?user_id= (redirect)", lambda d: (f"/api/v1/orders?user_id={d['users_with'][1]}", "1 order", f"/api/v1/orders?user_id={d['users_with'][300]}", "300 orders"), 2, 0),  #  now follows the 307 to /summary (user check + summary)
     ("GET /events (list)", lambda d: (f"/api/v1/events?category={d['category']}&page_size=1", "page_size=1", f"/api/v1/events?category={d['category']}&page_size=100", "page_size=100"), 0, 2),
     ("GET /products (alias of events)", lambda d: (f"/api/v1/products?category={d['category']}&page_size=1", "page_size=1", f"/api/v1/products?category={d['category']}&page_size=100", "page_size=100"), 0, 2),
 ]
@@ -231,11 +231,6 @@ def test_users_list_returns_plain_columns_and_no_secrets(env, data):
     assert kb < 60
 
 
-@pytest.mark.xfail(
-    reason="the ORIGINAL GET /orders?user_id= still loads whole entity graphs and is not paginated (326 KB for 300 orders). "
-           "Use GET /orders/summary; this test passes by itself once the original endpoint is bounded too.",
-    strict=False,
-)
 def test_original_orders_list_payload_is_bounded(env, data):
     _, _, kb = measure(f"/api/v1/orders?user_id={data['users_with'][300]}", "payload: GET /orders?user_id=", "300 orders")
     assert kb < 60, f"{kb:.0f} KB for 300 orders"
@@ -269,7 +264,7 @@ def test_booking_costs_the_same_round_trips_for_1_and_for_20_tickets(env, big_ev
         AUDIT.append(("POST /orders (booking)", f"{tickets} ticket(s)", counted.sql, counted.mongo, 0.0))
     assert (counts[20].sql, counts[20].mongo) == (counts[1].sql, counts[1].mongo), (
         f"booking is N+1: 1 ticket {counts[1].sql}/{counts[1].mongo}, 20 tickets {counts[20].sql}/{counts[20].mongo}\n{counts[20].statements}")
-    assert counts[20].sql <= 8 and counts[20].mongo <= 4
+    assert counts[20].sql <= 3 and counts[20].mongo <= 3, f"booking budget: INSERT order + INSERT tickets + INSERT outbox, got {counts[20].sql}: {counts[20].statements}"  # CHANGE round trip 8 -> 3 after removing the user SELECT, refresh and lazy loads
 
 
 def test_payment_costs_the_same_round_trips_for_1_and_for_20_tickets(env, big_event):
