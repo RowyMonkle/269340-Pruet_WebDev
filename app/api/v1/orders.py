@@ -1,8 +1,10 @@
 from typing import List, Optional
-from fastapi import APIRouter, Depends, Header, HTTPException, Query, status
+from urllib.parse import urlencode  # build the query string of the redirect
+from fastapi import APIRouter, Depends, Header, HTTPException, Query,Request, status
+from fastapi.responses import RedirectResponse
 #use to create COUNT/SUM in database
 from sqlalchemy import func,select 
-from sqlalchemy.orm import Session, joinedload
+from sqlalchemy.orm import Session
 from pymongo.database import Database
 
 from app.core.database import get_db, get_mongo_db
@@ -17,6 +19,8 @@ router = APIRouter(prefix="/orders", tags=["Orders (Dual-DB Transaction)"])
 
 #status of payment (already paid)
 PAID_PAYMENT_STATUS="completed"
+DEFAULT_PAGE_SIZE = 20 # shared by /summary and the GET /orders redirect
+MAX_PAGE_SIZE = 100
 
 #error:every endpoint  --datavase res to Swagger show schema of error
 DB_ERROR_RESPONSES = {  
@@ -101,7 +105,7 @@ def create_order(
 )
 def list_order_summaries(  #summary list for "my orders" page
     user_id: int = Query(..., gt=0, description="User ID to filter orders"),  #  gt=0 -> invalid id gives 422
-    limit: int = Query(20, ge=1, le=100, description="Page size"),  # cap page size
+    limit: int = Query(DEFAULT_PAGE_SIZE, ge=1, le=MAX_PAGE_SIZE, description="Page size"), # cap page size
     offset: int = Query(0, ge=0, description="Rows to skip"),  # pagination
     db: Session = Depends(get_db),
 ):
@@ -152,21 +156,25 @@ def get_order_by_id(
 
 @router.get(
     "",
-    response_model=List[OrderResponse],
-    status_code=status.HTTP_200_OK,
+    response_class=RedirectResponse,
+    status_code=status.HTTP_307_TEMPORARY_REDIRECT,
     summary="List Orders by User",
-    description="Fetch orders for a specific user ID with ticket and payment details.",
-    responses=DB_ERROR_RESPONSES,  #show errors in Swagger
+    description=(
+        "Kept so existing clients do not break. It used to return every order of the user with all tickets "
+        "and payments (326 KB for 300 orders, no limit). It now redirects (307) to "
+        "GET /orders/summary with the same user_id and a bounded page. Call /orders/summary directly "
+        "to save the extra request."
+    ),
+    deprecated=True,
+    responses={307: {"description": "Redirect to GET /orders/summary?user_id=..&limit=..&offset=.."}},  #show errors in Swagger
 )
 def list_orders_by_user(
-    user_id: int = Query(..., description="User ID to filter orders"),
-    db: Session = Depends(get_db),
+    request: Request, #to build the redirect from the path this request came in on
+    user_id: int = Query(..., gt=0, description="User ID to filter orders"),
+    limit: int = Query(DEFAULT_PAGE_SIZE, ge=1, le=MAX_PAGE_SIZE, description="Page size"),
+    offset: int = Query(0, ge=0, description="Rows to skip"),
 ):
-    orders = (
-        db.query(Order)
-        .options(joinedload(Order.tickets), joinedload(Order.payments))
-        .filter(Order.user_id == user_id)
-        .order_by(Order.created_at.desc())
-        .all()
-    )
-    return orders
+    #relative Location (a path, not a full URL): behind nginx the host the app sees is not the one the client used
+    summary_path = request.url.path.rstrip("/") + "/summary"
+    query = urlencode({"user_id": user_id, "limit": limit, "offset": offset})
+    return RedirectResponse(url=f"{summary_path}?{query}", status_code=status.HTTP_307_TEMPORARY_REDIRECT)
