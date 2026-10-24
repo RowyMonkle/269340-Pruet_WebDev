@@ -22,6 +22,7 @@ from tests.support import build_environment  # noqa: E402
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 _spec = importlib.util.spec_from_file_location("index_report", os.path.join(ROOT, "scripts", "index_report.py"))
+assert _spec is not None and _spec.loader is not None  # spec_from_file_location may return None
 index_report = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(index_report)
 

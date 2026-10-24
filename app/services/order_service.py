@@ -3,7 +3,7 @@ import logging
 import uuid
 from datetime import datetime, timedelta, timezone
 from decimal import Decimal
-from typing import Optional
+from typing import Optional, cast
 from bson import ObjectId
 from bson.errors import InvalidId
 from fastapi import HTTPException, status
@@ -110,7 +110,8 @@ def create_order_dual_db(
         )
         if existing_order:
             # Validate payload fingerprint: same user and matching ticket items
-            if existing_order.user_id != order_in.user_id or len(existing_order.tickets) != len(order_in.items):
+            stored_user_id = cast(int, existing_order.user_id)  # a loaded row holds a plain int; the type checker only sees the Column
+            if stored_user_id != order_in.user_id or len(existing_order.tickets) != len(order_in.items):
                 raise HTTPException(
                     status_code=status.HTTP_409_CONFLICT,
                     detail="Idempotency key reused with different request payload (user or item count mismatch).",

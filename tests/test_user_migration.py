@@ -93,6 +93,7 @@ def _load_verify_module():
     spec = importlib.util.spec_from_file_location(
         "verify_migration", os.path.join(ROOT, "scripts", "verify_migration.py")
     )
+    assert spec is not None and spec.loader is not None  # spec_from_file_location may return None
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
     return module
