@@ -45,7 +45,8 @@ def mentions(result, needle) -> bool:
 
 
 def set_booked(event_id, value):
-    mongo_db["events"].update_one({"_id": ObjectId(event_id)}, {"$set": {"zones.0.booked_count": value}})
+    # these tests CORRUPT the data on purpose to prove the audit notices; the events validator would refuse the write
+    mongo_db["events"].update_one({"_id": ObjectId(event_id)}, {"$set": {"zones.0.booked_count": value}}, bypass_document_validation=True)
 
 
 def booked_event(env, capacity=10, seats=3):
@@ -101,23 +102,55 @@ def test_detects_overselling_and_negative_counters(env):
 
 def test_detects_more_tickets_than_capacity_in_postgres(env):
     event_id, orders = booked_event(env, capacity=3, seats=3)
-    mongo_db["events"].update_one({"_id": ObjectId(event_id)}, {"$set": {"zones.0.capacity": 2}})
+    mongo_db["events"].update_one({"_id": ObjectId(event_id)}, {"$set": {"zones.0.capacity": 2}}, bypass_document_validation=True)
     checks, _ = run()
     assert mentions(checks["pg_over_capacity"], event_id)
 
 
-def test_detects_a_double_charge(env):
+def test_the_database_now_refuses_a_double_charge_so_the_audit_stays_clean(env):
+    """Since migration 0007 a second completed payment cannot be written at all (see tests/test_db_guards.py)."""
+    event_id, orders = booked_event(env)
+    with SessionLocal() as session:
+        with pytest.raises(IntegrityError):
+            session.execute(
+                text("INSERT INTO payments (order_id, payment_reference, amount, provider, status) "
+                     "VALUES (:o, :ref, :a, 'promptpay', 'completed')"),
+                {"o": orders[0]["id"], "ref": f"PAY-DUP-{orders[0]['id']}", "a": orders[0]["total_amount"]},
+            )
+            session.commit()
+    checks, _ = run()
+    assert not mentions(checks["double_charged_orders"], f"order {orders[0]['id']}")
+
+
+def test_the_double_charge_check_still_works_on_a_database_without_the_index(env):
+    """The audit must keep catching a double charge on a database that never got 0007 (or lost the index).
+    A TEMP table called `payments` shadows the real one for this connection only, so no real guard is touched."""
+    event_id, orders = booked_event(env)
+    order = orders[1]
+    with engine.begin() as conn:
+        conn.execute(text("CREATE TEMP TABLE payments (LIKE public.payments INCLUDING DEFAULTS) ON COMMIT DROP"))
+        for n in range(2):
+            conn.execute(
+                text("INSERT INTO payments (order_id, payment_reference, amount, provider, status) "
+                     "VALUES (:o, :ref, :a, 'promptpay', 'completed')"),
+                {"o": order["id"], "ref": f"PAY-TMP-{order['id']}-{n}", "a": order["total_amount"]},
+            )
+        found = {r.name: r for r in audit.postgres_checks(conn)}
+    assert mentions(found["double_charged_orders"], f"order {order['id']}")
+    assert mentions(found["payment_amount_mismatch"], f"order {order['id']}")
+
+
+def test_detects_one_payment_with_the_wrong_amount(env):
     event_id, orders = booked_event(env)
     with SessionLocal() as session:
         session.execute(
             text("INSERT INTO payments (order_id, payment_reference, amount, provider, status) "
-                 "VALUES (:o, :ref, :a, 'promptpay', 'completed')"),
-            {"o": orders[0]["id"], "ref": f"PAY-DUP-{orders[0]['id']}", "a": orders[0]["total_amount"]},
+                 "VALUES (:o, :ref, 1, 'promptpay', 'completed')"),
+            {"o": orders[1]["id"], "ref": f"PAY-LOW-{orders[1]['id']}"},
         )
         session.commit()
     checks, _ = run()
-    assert mentions(checks["double_charged_orders"], f"order {orders[0]['id']}")
-    assert mentions(checks["payment_amount_mismatch"], f"order {orders[0]['id']}")
+    assert mentions(checks["payment_amount_mismatch"], f"order {orders[1]['id']}")
 
 
 def test_detects_a_dead_order_that_still_holds_seats(env):
