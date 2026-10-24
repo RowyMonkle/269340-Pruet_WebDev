@@ -174,6 +174,7 @@ What each one proves, and which mechanism it protects, is listed in [section 7.2
 | `GET` | `/api/v1/orders/{id}/summary` | PostgreSQL | `200`, `404` | One order summary without tickets or payments |
 | `GET` | `/api/v1/orders/{id}`| PostgreSQL | `200`, `404` | Fetch order details with associated tickets and payments (joinedload) |
 | `POST` | `/api/v1/orders/{id}/payments` | PostgreSQL | `201`, `400`, `404`, `409`, `410`, `503` | Process payment, confirm order, activate tickets (`held` $\rightarrow$ `valid`); `409` already paid / cancelled, `410` hold expired |
+| `POST` | `/api/v1/payments` | PostgreSQL | `201`, `400`, `404`, `409`, `410`, `503` | The same operation, locks and errors as `POST /orders/{id}/payments`, with the order id in the body: `{"order_id", "amount", "provider"}` (`payment_method` is accepted as another name for `provider`). For clients that cannot template a path, such as k6 |
 | `GET` | `/api/v1/orders/{id}/payments` | PostgreSQL | `200`, `404` | List payment transaction attempts for an order |
 | `POST` | `/api/v1/orders/cleanup-expired` | Dual-DB | `200` | **Internal**: nginx answers `404`, not in Swagger. The background worker runs it every 15 s on every replica |
 
