@@ -5,14 +5,17 @@ from pymongo.database import Database
 
 from app.core.database import get_db, get_mongo_db
 from app.schemas.errors import ErrorResponse, ValidationErrorResponse
-from app.schemas.payment import CleanupResponse, PaymentCreate, PaymentResponse
+from app.schemas.payment import CleanupResponse, PaymentCreate, PaymentCreateByOrder, PaymentResponse
 from app.services.payment_service import (
     process_order_payment,
     get_payments_by_order_id,
 )
 from app.services.order_service import cleanup_expired_seat_holds
 
-router = APIRouter(prefix="/orders", tags=["Payments & Checkout (Relational Billing)"])
+TAG = "Payments & Checkout (Relational Billing)"
+router = APIRouter(prefix="/orders", tags=[TAG])
+# POST /payments: the same operation with the order id in the body, for clients that cannot template a path (k6, forms)
+flat_router = APIRouter(prefix="/payments", tags=[TAG])
 
 # 400 from the global validation handler in main.py (bad path / body / header)
 VALIDATION_ERROR_RESPONSE = {
@@ -25,24 +28,28 @@ DB_ERROR_RESPONSES = {
 }
 
 
+PAY_RESPONSES = {  # every error a payment endpoint can return (shared by both routes)
+    **VALIDATION_ERROR_RESPONSE,
+    404: {"model": ErrorResponse, "description": "Order not found"},
+    410: {"model": ErrorResponse, "description": "Seat hold expired (or order already expired), the order must be placed again"},
+    **DB_ERROR_RESPONSES,
+    409: {"model": ErrorResponse, "description": "Order already paid or cancelled, or a concurrent update collided"},  # overrides the generic 409 (must come after **DB_ERROR_RESPONSES)
+}
+PAY_DESCRIPTION = (
+    "Processes payment for an order currently holding seats. "
+    "Transitions order from 'pending' to 'confirmed', validates hold expiry, "
+    "and activates held tickets to 'valid'. "
+    "Returns HTTP 410 Gone if the seat hold has expired."
+)
+
+
 @router.post(
     "/{order_id}/payments",
     response_model=PaymentResponse,
     status_code=status.HTTP_201_CREATED,
     summary="Process Order Payment",
-    description=(
-        "Processes payment for an order currently holding seats. "
-        "Transitions order from 'pending' to 'confirmed', validates hold expiry, "
-        "and activates held tickets to 'valid'. "
-        "Returns HTTP 410 Gone if the seat hold has expired."
-    ),
-    responses={  # document every error this endpoint can return
-        **VALIDATION_ERROR_RESPONSE,
-        404: {"model": ErrorResponse, "description": "Order not found"},
-        410: {"model": ErrorResponse, "description": "Seat hold expired (or order already expired), the order must be placed again"},
-        **DB_ERROR_RESPONSES,
-        409: {"model": ErrorResponse, "description": "Order already paid or cancelled, or a concurrent update collided"},  # overrides the generic 409 (must come after **DB_ERROR_RESPONSES)
-    },
+    description=PAY_DESCRIPTION,
+    responses=PAY_RESPONSES,
 )
 def pay_for_order(
     order_id: int = Path(..., description="PostgreSQL Order ID"),
@@ -55,6 +62,33 @@ def pay_for_order(
         mongo_db=mongo_db,
         order_id=order_id,
         payment_in=payment_in,
+    )
+
+
+@flat_router.post(
+    "",
+    response_model=PaymentResponse,
+    status_code=status.HTTP_201_CREATED,
+    summary="Process Order Payment (order id in the body)",
+    description=(
+        "Exactly the same operation, locks and errors as `POST /orders/{order_id}/payments`; the order id is "
+        "`order_id` in the body. " + PAY_DESCRIPTION
+    ),
+    responses=PAY_RESPONSES,
+)
+def pay_by_body(
+    payment_in: PaymentCreateByOrder,
+    db: Session = Depends(get_db),
+    mongo_db: Database = Depends(get_mongo_db),
+):
+    # one implementation: the row lock, the one-completed-payment-per-order guard and every error code live in the service
+    return process_order_payment(
+        db=db,
+        mongo_db=mongo_db,
+        order_id=payment_in.order_id,
+        payment_in=PaymentCreate(
+            amount=payment_in.amount, provider=payment_in.provider, provider_tx_id=payment_in.provider_tx_id
+        ),
     )
 
 
