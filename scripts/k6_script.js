@@ -12,7 +12,7 @@ export const options = {
   ],
   thresholds: {
     'http_req_duration': ['p(95)<200', 'p(99)<500'], // Latency p95 < 200ms, p99 < 500ms
-    'http_errors': ['rate<0.01'],                     // Error rate < 1%
+    'http_errors': ['rate<0.01'],                     // Strict error rate < 1%
   },
 };
 
@@ -34,7 +34,6 @@ export function setup() {
 
     for (const ev of items) {
       if (ev.zones && ev.zones.length > 0) {
-        // Map zone names from event.zones: [{'name': 'VIP Standing', ...}]
         const zoneNames = ev.zones.map((z) => z.name || z.zone || z);
         eventTargets.push({
           id: ev.id,
@@ -46,7 +45,6 @@ export function setup() {
     console.error('Failed to setup events:', err);
   }
 
-  // Fallback if events list was empty
   if (eventTargets.length === 0) {
     eventTargets.push({
       id: '6adc62df13db50bf31a1612e',
@@ -90,7 +88,7 @@ export default function (data) {
       });
 
       const res = http.post(`${BASE_URL}/orders`, orderPayload, params);
-      // Valid outcomes: 200/201 (success), 409 (concurrency lock / seat full), or 400 (sold out)
+      // Valid order outcomes: 200/201 (success), 409 (sold out / seat lock), 400/404 (unavailable)
       const ok = check(res, {
         'order status valid': (r) => [200, 201, 400, 404, 409].includes(r.status),
       });
@@ -103,8 +101,9 @@ export default function (data) {
       });
 
       const res = http.post(`${BASE_URL}/payments`, paymentPayload, params);
+      // Valid payment outcomes: 200/201 (success), 409 (already paid), 410 (expired order), 400/404 (not found)
       const ok = check(res, {
-        'payment status valid': (r) => [200, 201, 400, 404, 409].includes(r.status),
+        'payment status valid': (r) => [200, 201, 400, 404, 409, 410].includes(r.status),
       });
       errorRate.add(!ok);
     }
