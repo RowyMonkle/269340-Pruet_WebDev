@@ -17,7 +17,7 @@ signup and login uses, so it must happen while the API keeps taking writes.
 
 | Phase | Action | Flags (`user_name_write_mode` / `user_name_read_source`) | Exit condition | Rollback |
 |---|---|---|---|---|
-| 1 Expand | Alembic `0004_expand_user_names`: add nullable `first_name`, `last_name`, drop NOT NULL on `full_name`, `CREATE INDEX CONCURRENTLY idx_users_last_name` | `legacy` / `legacy` | `alembic current` lists `0006_orders_list_index` (its ancestor is 0004); old API still works | `alembic downgrade 0003_feature_flags` |
+| 1 Expand | Alembic `0004_expand_user_names`: add nullable `first_name`, `last_name`, drop NOT NULL on `full_name`, `CREATE INDEX CONCURRENTLY idx_users_last_name` | `legacy` / `legacy` | `alembic current` lists `0008_drop_redundant_indexes` (its ancestor is 0004); old API still works | `alembic downgrade 0003_feature_flags` |
 | 2 Dual write | API writes both representations | `dual` / `legacy` | every replica reports `dual`; new signups have all three columns | set write mode back to `legacy` |
 | 3 Backfill | `scripts/backfill.py` fills old rows in batches of 50 to 100 with a checkpoint | `dual` / `legacy` | `verify_migration.py --stage after-backfill` passes | stop the job; re-run resumes from checkpoint |
 | 4 Switch read | API reads `first_name` / `last_name` | `dual` / `new`, then `new` / `new` | 0 errors under `traffic_gen.py`; legacy and new responses agree | set read source back to `legacy` (needs write mode `dual`) |
@@ -28,7 +28,7 @@ Flags change at runtime, no restart: `PUT /api/v1/admin/flags/{key}` with header
 `FLAG_CACHE_SECONDS` (2 s).
 
 ## Rules that keep it zero-downtime
-- `scripts/migrate.py` (run by `docker compose up`) stops at `0006_orders_list_index` (CP3), which hangs off
+- `scripts/migrate.py` (run by `docker compose up`) stops at `0008_drop_redundant_indexes` (CP3), which hangs off
   `0004_expand_user_names` as a second head: it applies the expand step but never the contract.
   The contract revision is never applied by startup. Apply it on purpose:
   `docker compose exec api alembic upgrade 0005_contract_user_full_name`.

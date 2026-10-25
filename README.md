@@ -326,11 +326,11 @@ has an owner, file names and an acceptance test in 7.6.
 | ---: | --- | --- | --- |
 | 35 | Concurrency control (optimistic **or** pessimistic) proven by `test_concurrency.py` | Natthakritta | **Done.** Pessimistic locking + atomic seat counters, `test_concurrency.py` (22 tests), a limit on every wait (7.2, 7.3, 7.9) |
 | 35 | Query projection and zero N+1 on list endpoints | Nannapat (endpoints), Natthakritta (index, DB statistics) | DB side **Done**. Order summaries: `GET /orders/summary` (section 4). Open items for the list endpoints: 7.6 |
-| 20 | Load test: >= 50 VUs, 3 min, p95 < 200 ms, p99 < 500 ms, errors < 1 % | Poonyaporn | **TODO.** The backend already passes a throwaway profile (7.7) |
-| 10 | `Performance_Audit_Report.pdf` (or a README section) + defence | Pandara (report), everyone (defence) | **TODO** |
+| 20 | Load test: >= 50 VUs, 3 min, p95 < 200 ms, p99 < 500 ms, errors < 1 % | Poonyaporn | **Done.** `scripts/k6_script.js`: 50 VUs, 3 min, real writes; 216.1 req/s, p95 60.04 ms, p99 104.07 ms, 0 % failed (7.13) |
+| 10 | `Performance_Audit_Report.pdf` (or a README section) + defence | Pandara (report), everyone (defence) | Report **written** with charts: `docs/Performance_Audit_Report.md` and the summary in 7.13 (the spec accepts a README section). Open: PDF export if the team wants one, the defence script |
 
 Team decisions (2026-10-13): **Option B (pessimistic)** is our concurrency answer, Option A (version column / 412) is not built.
-Load tool: **Locust**. `pg_stat_statements` is enabled for database-side evidence.
+Load tool: **k6** for the official benchmark (`scripts/k6_script.js`), **Locust** (`docs/perf/reference_locustfile.py`) as the independent cross-check. `pg_stat_statements` is enabled for database-side evidence.
 
 ### 7.2 How the system prevents races
 
@@ -650,7 +650,7 @@ docker compose exec -e REQUIRE_DB=1 api pytest tests/test_query_counts.py -v -s 
 | `GET /orders/{id}/summary` | 1 -> 50 tickets and payments | 1 -> 1 | - | 0.2 KB |
 | `GET /orders/{id}` | 1 -> 50 tickets and payments | 1 -> 1 | - | 20.8 KB (the full detail) |
 | `GET /orders/{id}/payments` | 1 -> 50 payments | 2 -> 2 | - | 10.9 KB |
-| `GET /events`, `GET /products` | page 1 -> 100 events | - | 2 -> 2 | **31 KB** (was 124 KB) |
+| `GET /events`, `GET /products` | page 1 -> 100 events | - | 2 -> 2 | **27 KB** (was 124 KB) |
 | `POST /orders` | 1 -> 20 tickets | 7 -> 7 | 3 -> 3 | - |
 | `POST /orders/{id}/payments` | 1 -> 20 tickets | **11 -> 30** before, **6 -> 6** now | 1 | - |
 | `POST /orders/{id}/payments` on an expired hold | 1 -> 20 tickets | constant (was one UPDATE per ticket) | 1 | - |
@@ -741,3 +741,35 @@ docker compose exec -e REQUIRE_DB=1 api pytest tests/test_index_report.py tests/
 
 **Side finding (nginx).** One `POST` in 18,192 came back `502` with "Connection reset by peer": nginx kept idle connections to a replica for 60 s while uvicorn closes them after 5 s. `keepalive_timeout 4s;` in the `upstream` block makes nginx give up first
 (reproduced on purpose: 1 failure in 200 requests before, 0 in 200 after; a small sample, so read it as consistent with the fix).
+
+
+### 7.13 Performance Audit Report: the load test with real writes (CP3 deliverable)
+
+The full report is [`docs/Performance_Audit_Report.md`](docs/Performance_Audit_Report.md) (objectives, mechanism, query audit, methodology, raw k6 output, consistency audit, risks, how to reproduce). The load test is `scripts/k6_script.js`: **50 VUs for 3 minutes**, 65 % read / 35 % write iterations, and **every write really succeeds** (the script creates its own events, pays the order it has just created, and counts only the expected status as a success).
+
+| CP3 requirement | Result (run 3 of 3) | Status |
+| --- | --- | --- |
+| >= 50 VUs, 3 minutes | 50 VUs for 180 s (+ 10 s ramp up and down) | PASS |
+| Stable throughput | **216.1 req/s** (43,253 requests); steady state 227.0 req/s, min 175, max 239, coefficient of variation 4.4 % | PASS |
+| p95 < 200 ms | **60.04 ms** | PASS |
+| p99 < 500 ms | **104.07 ms** (max 273.98 ms; no request slower than 500 ms) | PASS |
+| HTTP error rate < 1 % | **0.00 %** (0 of 43,253, k6's own `http_req_failed`) | PASS |
+| Writes | 11,098 orders and 7,773 payments committed (all `201`) | PASS |
+| Race condition under load | contested zone of 25 seats, 1,156 attempts: **exactly 25 won**, 1,131 got `409`; 378 repeated payments all refused with `409` | PASS |
+| Integrity after the load | `verify_consistency.py`: 13 / 13 checks, 0 double charges | PASS |
+
+Three consecutive runs agree within 1 % on throughput and within 4 ms on p95 (214.7 / 215.4 / 216.1 req/s). The Locust profile of 7.7 is the independent cross-check (154.9 req/s, p95 120 ms, p99 130 ms; its p95 is carried by `POST /users`, bcrypt).
+
+![Throughput and virtual users](docs/perf/k6_throughput.png)
+![Latency over time against the CP3 limits](docs/perf/k6_latency.png)
+
+More charts (latency per endpoint, outcome of every request) are in the report. Reproduce:
+
+```bash
+docker run --rm --network 269340-pruet_ticweb_default -v "$PWD/scripts:/scripts:ro" -v "$PWD/docs:/out" \
+  -e BASE_URL=http://nginx/api/v1 grafana/k6 run /scripts/k6_script.js \
+  --summary-export /out/k6_summary.json --out csv=/out/perf/k6_points.csv
+docker run --rm -v "$PWD/docs/perf:/out" python:3.11-slim python /out/make_k6_charts.py     # the charts and k6_stats.json
+```
+
+**Methodology note.** A first benchmark (186 req/s, p95 85.82 ms) was withdrawn: its checks accepted `400`/`404`/`409`/`410` as valid and k6's own `http_req_failed` showed 34.86 %, because no write request had succeeded (the event list is a summary without zones, so the script fell back to an event id that does not exist, and it paid random order ids). The report explains it in section 5.3.

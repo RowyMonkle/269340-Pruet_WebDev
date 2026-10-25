@@ -46,7 +46,7 @@ Code that is yours today: `scripts/backfill.py`, `scripts/traffic_gen.py` (CP2),
 - [ ] **Run protocol**: `pg_stats.py --reset` -> load -> `pg_stats.py --top 15 --requests N --csv docs/perf/pg_top.csv` -> `verify_consistency.py`. Save Locust `--csv` and `--html` in `docs/perf/`.
 - [ ] **Before and after** with the same profile (before = commit before the list changes). Hand Pandara a table and charts. `docs/perf/reference_locustfile.py` is the profile used for the baseline numbers in README 7.7 and 7.9: start from it.
 - [ ] **Mongo**: index for the events list (status + date_time) and an `explain()` screenshot/output.
-- [ ] **`scripts/k6_script.js`** (merged in PR #24): `POST /api/v1/payments` now exists (order id in the body, `payment_method` accepted; same service as `POST /orders/{id}/payments`), so the payment requests no longer end in 404. Still to fix so the numbers mean something: pay the order id that `POST /orders` just returned (not a random 1..50: those are mostly already paid or expired and answer 409 / 410), count only 201 (and the intended 409 on a deliberate double payment) as success instead of accepting 400 / 404, add `GET /orders/summary?user_id=`, export p99 in the summary, seed bigger data, and save the command and the result in `docs/`.
+- [x] **`scripts/k6_script.js`** rewritten so that writes really succeed: it creates its own events (a large zone and a 25-seat contested zone), pays the order it has just created, counts only the expected status, thresholds on k6's own `http_req_failed` and on exactly 25 winners, 3 minutes at 50 VUs. Result and charts: `docs/Performance_Audit_Report.md`, README 7.13, `docs/k6_summary.json`, `docs/perf/`. Re-run it on your own machine before the defence (command in the script header).
 - [ ] Warm up before measuring (first seconds after a restart are slower); keep `POST /users` at 3 % of the mix or less, or report it separately (bcrypt).
 
 Who checks you: Natthakritta re-runs your locustfile on a clean stack; the audit must say ALL CHECKS PASSED after your load.
@@ -91,6 +91,6 @@ Rules for the others: tests that corrupt MongoDB on purpose need `bypass_documen
 - [x] Concurrency control implementation (pessimistic locks + atomic seat counters): `app/services/*`
 - [x] Concurrency verification script: `tests/test_concurrency.py`
 - [x] Audited queries with projection and zero N+1 in list endpoints: `tests/test_query_counts.py`, README 7.10 (open: the original `GET /orders?user_id=` payload)
-- [ ] Automated load test script: `loadtest/locustfile.py` (Poonyaporn)
-- [ ] `Performance_Audit_Report.pdf` with charts and metrics (Pandara)
+- [x] Automated load test script: `scripts/k6_script.js` (Poonyaporn's k6 script, rewritten); Locust reference profile in `docs/perf/reference_locustfile.py`
+- [x] Performance audit report with charts and metrics: `docs/Performance_Audit_Report.md` + README 7.13 (the spec accepts a README section). Optional: export the PDF (Pandara)
 - [ ] Clean zip built with `git archive`; submission channel confirmed with the instructor

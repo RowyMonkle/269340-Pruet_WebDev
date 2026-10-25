@@ -1,101 +1,220 @@
 {
+    "setup_data": {
+        "zone": "Load GA",
+        "eventId": "6add754e8d3f940bf0a5cdc2",
+        "hotEventId": "6add754e2ce1ade1fd7efb48",
+        "hotZone": "Hot Zone"
+    },
     "root_group": {
+        "groups": {
+            "teardown": {
+                "id": "a8a9942382e8ffe2e56ef29e664b8229",
+                "groups": {},
+                "checks": {
+                        "hot zone sold exactly its capacity (no oversell)": {
+                            "name": "hot zone sold exactly its capacity (no oversell)",
+                            "path": "::teardown::hot zone sold exactly its capacity (no oversell)",
+                            "id": "b3bc7321d15200b79a98fcfd9855ec10",
+                            "passes": 1,
+                            "fails": 0
+                        }
+                    },
+                "name": "teardown",
+                "path": "::teardown"
+            }
+        },
+        "checks": {
+            "order status 201": {
+                "passes": 11098,
+                "fails": 0,
+                "name": "order status 201",
+                "path": "::order status 201",
+                "id": "66683036487a8d64856d6ffc000beb7b"
+            },
+            "order summary status 200": {
+                "passes": 5645,
+                "fails": 0,
+                "name": "order summary status 200",
+                "path": "::order summary status 200",
+                "id": "31fd6b1eeaf5b4e0d740719c5a7b956d"
+            },
+            "user status 200": {
+                "fails": 0,
+                "name": "user status 200",
+                "path": "::user status 200",
+                "id": "aac8d1d6e0b8ab785969e3919333cda0",
+                "passes": 5691
+            },
+            "payment status 201": {
+                "passes": 7773,
+                "fails": 0,
+                "name": "payment status 201",
+                "path": "::payment status 201",
+                "id": "ed65ab0cccdafe2f5ce9ec10d16e4b7f"
+            },
+            "event detail status 200": {
+                "fails": 0,
+                "name": "event detail status 200",
+                "path": "::event detail status 200",
+                "id": "ef9413c42b86008b0fc3dc60354a99db",
+                "passes": 3347
+            },
+            "double payment refused with 409": {
+                "name": "double payment refused with 409",
+                "path": "::double payment refused with 409",
+                "id": "0bb18d3f557df5565c20e849733a501c",
+                "passes": 378,
+                "fails": 0
+            },
+            "events status 200": {
+                "name": "events status 200",
+                "path": "::events status 200",
+                "id": "c9504a49201db4670124d27003d376dd",
+                "passes": 8162,
+                "fails": 0
+            },
+            "hot zone order is 201 or 409": {
+                "name": "hot zone order is 201 or 409",
+                "path": "::hot zone order is 201 or 409",
+                "id": "96e6ba8ce506a399da0789eb4a4c69b8",
+                "passes": 1156,
+                "fails": 0
+            }
+        },
         "name": "",
         "path": "",
-        "id": "d41d8cd98f00b204e9800998ecf8427e",
-        "groups": {},
-        "checks": {
-                "events status 200": {
-                    "name": "events status 200",
-                    "path": "::events status 200",
-                    "id": "c9504a49201db4670124d27003d376dd",
-                    "passes": 10984,
-                    "fails": 0
-                },
-                "user status 200": {
-                    "id": "aac8d1d6e0b8ab785969e3919333cda0",
-                    "passes": 10895,
-                    "fails": 0,
-                    "name": "user status 200",
-                    "path": "::user status 200"
-                },
-                "payment status valid": {
-                    "id": "1639cde46799435f6927e38f0e6ecc1b",
-                    "passes": 5905,
-                    "fails": 0,
-                    "name": "payment status valid",
-                    "path": "::payment status valid"
-                },
-                "order status valid": {
-                    "id": "4480cae28248750905c93c32e57ad273",
-                    "passes": 5807,
-                    "fails": 0,
-                    "name": "order status valid",
-                    "path": "::order status valid"
-                }
-            }
+        "id": "d41d8cd98f00b204e9800998ecf8427e"
     },
     "metrics": {
-        "vus": {
-            "min": 1,
-            "max": 50,
-            "value": 1
-        },
-        "http_req_sending": {
-            "avg": 0.043031465825195354,
-            "min": 0.001,
-            "med": 0.015,
-            "max": 62.162,
-            "p(90)": 0.034,
-            "p(95)": 0.051
-        },
         "http_req_blocked": {
+            "p(95)": 0.008777,
+            "p(99)": 0.02322080000000003,
+            "avg": 0.006980904399694871,
+            "min": 0.002164,
+            "med": 0.005161,
+            "max": 5.440507,
+            "p(90)": 0.007786
+        },
+        "http_req_connecting": {
+            "avg": 0.00048265223221510644,
             "min": 0,
-            "med": 0.004,
-            "max": 45.247,
-            "p(90)": 0.01,
-            "p(95)": 0.015,
-            "avg": 0.015656763515120572
+            "med": 0,
+            "max": 0.679159,
+            "p(90)": 0,
+            "p(95)": 0,
+            "p(99)": 0
         },
-        "http_reqs": {
-            "count": 33592,
-            "rate": 186.44743189809404
+        "http_req_waiting": {
+            "p(99)": 103.89787416000014,
+            "avg": 20.754377179178373,
+            "min": 2.86613,
+            "med": 15.778503,
+            "max": 273.836597,
+            "p(90)": 41.408735,
+            "p(95)": 59.90647260000002
         },
-        "http_req_receiving": {
-            "max": 32.615,
-            "p(90)": 0.111,
-            "p(95)": 0.152,
-            "avg": 0.08211505715646432,
-            "min": 0.007,
-            "med": 0.045
-        },
-        "iteration_duration": {
-            "max": 6240.341459,
-            "p(90)": 244.966083,
-            "p(95)": 287.2732704999998,
-            "avg": 238.52828958396515,
-            "min": 201.594667,
-            "med": 207.649542
-        },
-        "iterations": {
-            "count": 33591,
-            "rate": 186.44188154587033
-        },
-        "http_req_duration{expected_response:true}": {
-            "p(95)": 85.60764999999995,
-            "avg": 36.371074588665145,
-            "min": 1.469,
-            "med": 7.012,
-            "max": 6021.703,
-            "p(90)": 43.2825
+        "data_received": {
+            "count": 94016145,
+            "rate": 469718.726028615
         },
         "http_errors": {
             "passes": 0,
-            "fails": 33591,
+            "fails": 43250,
             "thresholds": {
                 "rate<0.01": false
             },
             "value": 0
+        },
+        "payments_completed": {
+            "rate": 38.835070906389795,
+            "count": 7773
+        },
+        "http_req_duration": {
+            "max": 273.984052,
+            "p(90)": 41.54605400000004,
+            "p(95)": 60.041172200000005,
+            "p(99)": 104.07729072000002,
+            "avg": 20.890669450558228,
+            "min": 2.958154,
+            "med": 15.917591,
+            "thresholds": {
+                "p(95)<200": false,
+                "p(99)<500": false
+            }
+        },
+        "http_req_failed": {
+            "passes": 0,
+            "fails": 43253,
+            "thresholds": {
+                "rate<0.01": false
+            },
+            "value": 0
+        },
+        "hot_zone_orders_won": {
+            "count": 25,
+            "rate": 0.12490374021095393,
+            "thresholds": {
+                "count==25": false
+            }
+        },
+        "http_reqs": {
+            "count": 43253,
+            "rate": 216.09845901377562
+        },
+        "http_req_sending": {
+            "med": 0.017284,
+            "max": 1.309482,
+            "p(90)": 0.0617938,
+            "p(95)": 0.0715734,
+            "p(99)": 0.09992200000000048,
+            "avg": 0.028148177421219354,
+            "min": 0.007364
+        },
+        "iterations": {
+            "count": 35099,
+            "rate": 175.35985510657088
+        },
+        "http_req_duration{expected_response:true}": {
+            "avg": 20.890669450558228,
+            "min": 2.958154,
+            "med": 15.917591,
+            "max": 273.984052,
+            "p(90)": 41.54605400000004,
+            "p(95)": 60.041172200000005,
+            "p(99)": 104.07729072000002
+        },
+        "data_sent": {
+            "count": 7412501,
+            "rate": 37033.96396869745
+        },
+        "http_req_receiving": {
+            "p(99)": 0.23882640000000024,
+            "avg": 0.1081440939588008,
+            "min": 0.019629,
+            "med": 0.095952,
+            "max": 2.361702,
+            "p(90)": 0.1565264000000001,
+            "p(95)": 0.17777520000000005
+        },
+        "double_payments_rejected": {
+            "count": 378,
+            "rate": 1.8885445519896236
+        },
+        "hot_zone_orders_sold_out": {
+            "count": 1131,
+            "rate": 5.650645207143556
+        },
+        "checks": {
+            "passes": 43251,
+            "fails": 0,
+            "thresholds": {
+                "rate>0.99": false
+            },
+            "value": 1
+        },
+        "orders_created": {
+            "count": 11098,
+            "rate": 55.44726835444667
         },
         "http_req_tls_handshaking": {
             "avg": 0,
@@ -103,70 +222,27 @@
             "med": 0,
             "max": 0,
             "p(90)": 0,
-            "p(95)": 0
+            "p(95)": 0,
+            "p(99)": 0
         },
-        "data_received": {
-            "count": 79379042,
-            "rate": 440581.64227884455
+        "iteration_duration": {
+            "avg": 271.0057519988327,
+            "min": 203.299159,
+            "med": 214.159227,
+            "max": 798.833623,
+            "p(90)": 454.672292,
+            "p(95)": 479.42670639999994,
+            "p(99)": 541.3350892799994
         },
-        "http_req_failed": {
-            "passes": 11712,
-            "fails": 21880,
-            "value": 0.3486544415336985
-        },
-        "data_sent": {
-            "count": 4418801,
-            "rate": 24525.90195638038
+        "vus": {
+            "min": 3,
+            "max": 50,
+            "value": 3
         },
         "vus_max": {
             "value": 50,
             "min": 50,
             "max": 50
-        },
-        "checks": {
-            "passes": 33591,
-            "fails": 0,
-            "value": 1
-        },
-        "http_req_waiting": {
-            "min": 1.266,
-            "med": 6.903,
-            "max": 6039.766,
-            "p(90)": 43.64560000000002,
-            "p(95)": 85.59704999999995,
-            "avg": 37.59969972017151
-        },
-        "http_req_connecting": {
-            "max": 3.292,
-            "p(90)": 0,
-            "p(95)": 0,
-            "avg": 0.0007047213622291025,
-            "min": 0,
-            "med": 0
-        },
-        "http_req_duration": {
-            "avg": 37.72484624315273,
-            "min": 1.3,
-            "med": 6.9945,
-            "max": 6039.802,
-            "p(90)": 43.8325,
-            "p(95)": 85.82004999999995,
-            "thresholds": {
-                "p(95)<200": false,
-                "p(99)<500": false
-            }
         }
-    },
-    "setup_data": {
-        "targets": [
-            {
-                "zones": [
-                    "VIP Standing",
-                    "Front Zone A",
-                    "General Admission"
-                ],
-                "id": "6adc62df13db50bf31a1612e"
-            }
-        ]
     }
 }

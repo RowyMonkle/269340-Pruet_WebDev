@@ -1,0 +1,126 @@
+{
+  "seconds_total": 201,
+  "seconds_at_50_vus": 180,
+  "rps_steady_mean": 227.0,
+  "rps_steady_min": 175,
+  "rps_steady_max": 239,
+  "rps_steady_stdev": 10.0,
+  "rps_steady_cv_percent": 4.4,
+  "overall": {
+    "requests": 43253,
+    "p50": 15.92,
+    "p95": 60.04,
+    "p99": 104.08,
+    "max": 274.0
+  },
+  "steady": {
+    "requests": 40844,
+    "p50": 16.11,
+    "p95": 61.19,
+    "p99": 105.17,
+    "max": 274.0
+  },
+  "endpoints": {
+    "GET /events": {
+      "requests": 8162,
+      "p50": 8.9,
+      "p95": 40.2,
+      "p99": 71.5,
+      "max": 156.7,
+      "status": {
+        "200": 8162
+      }
+    },
+    "GET /events/{id}": {
+      "requests": 3347,
+      "p50": 5.7,
+      "p95": 30.8,
+      "p99": 54.2,
+      "max": 120.6,
+      "status": {
+        "200": 3347
+      }
+    },
+    "GET /orders/summary": {
+      "requests": 5645,
+      "p50": 10.9,
+      "p95": 40.6,
+      "p99": 71.4,
+      "max": 133.8,
+      "status": {
+        "200": 5645
+      }
+    },
+    "GET /users/{id}": {
+      "requests": 5691,
+      "p50": 7.2,
+      "p95": 33.2,
+      "p99": 63.0,
+      "max": 158.6,
+      "status": {
+        "200": 5691
+      }
+    },
+    "POST /orders": {
+      "requests": 11098,
+      "p50": 21.2,
+      "p95": 77.6,
+      "p99": 129.0,
+      "max": 239.1,
+      "status": {
+        "201": 11098
+      }
+    },
+    "POST /orders (hot zone)": {
+      "requests": 1156,
+      "p50": 8.6,
+      "p95": 41.5,
+      "p99": 74.8,
+      "max": 127.0,
+      "status": {
+        "201": 25,
+        "409": 1131
+      }
+    },
+    "POST /payments": {
+      "requests": 7773,
+      "p50": 23.9,
+      "p95": 77.4,
+      "p99": 129.2,
+      "max": 274.0,
+      "status": {
+        "201": 7773
+      }
+    },
+    "POST /payments (double payment)": {
+      "requests": 378,
+      "p50": 9.2,
+      "p95": 37.7,
+      "p99": 76.7,
+      "max": 147.4,
+      "status": {
+        "409": 378
+      }
+    },
+    "setup: POST /events": {
+      "requests": 2,
+      "p50": 6.0,
+      "p95": 6.1,
+      "p99": 6.1,
+      "max": 6.1,
+      "status": {
+        "201": 2
+      }
+    },
+    "teardown: GET /events/{id}": {
+      "requests": 1,
+      "p50": 4.4,
+      "p95": 4.4,
+      "p99": 4.4,
+      "max": 4.4,
+      "status": {
+        "200": 1
+      }
+    }
+  }
+}

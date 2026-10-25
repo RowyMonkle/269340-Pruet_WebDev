@@ -87,3 +87,4 @@ logs/
 loadtest/out/
 docs/demo.mp4
 docs/perf/out/
+docs/perf/k6_points.csv
