@@ -1,6 +1,6 @@
 """Reference Locust profile: the one used to measure the numbers in README section 7.7 and 7.9.
 
-A starting point for loadtest/locustfile.py, not a replacement for it. 50 users, mixed read/write, through nginx:
+The independent cross-check of scripts/k6_script.js (the official load test, README section 7.13). 50 users, mixed read/write, through nginx:
 
   GET  /events (5)  /events/{id} (3)  /orders?user_id (3)  /orders/{id} (2)  /users (1)  /users/{id} (1)
   POST /orders (3)  /orders/{id}/payments (1)  /users (1)

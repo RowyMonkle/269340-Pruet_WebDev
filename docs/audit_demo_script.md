@@ -54,7 +54,7 @@ curl -s http://localhost:8000/health | jq .
 ### Step 2.2: Retrieve Concert Event & Authoritative Pricing (MongoDB)
 ```bash
 # Fetch the first seeded event
-EVENT_ID=$(curl -s "http://localhost:8000/api/v1/events?limit=1" | jq -r '.[0]._id')
+EVENT_ID=$(curl -s "http://localhost:8000/api/v1/events?page_size=1" | jq -r '.items[0].id')
 echo "Target Event ID: $EVENT_ID"
 ```
 
@@ -129,14 +129,14 @@ curl -s -X POST "http://localhost:8000/api/v1/orders" \
 
 ---
 
-### Scenario B: Paying Twice for the Same Order (`400 Bad Request`)
+### Scenario B: Paying Twice for the Same Order (`409 Conflict`)
 Re-submit payment for the confirmed order `$ORDER_ID`:
 ```bash
 curl -s -X POST "http://localhost:8000/api/v1/orders/$ORDER_ID/payments" \
   -H "Content-Type: application/json" \
   -d "{\"amount\": $TOTAL, \"provider\": \"promptpay\"}" | jq .
 ```
-**Expected Output (`400 Bad Request`):**
+**Expected Output (`409 Conflict`):**
 ```json
 {
   "detail": "Order ORD-... is already paid and confirmed"

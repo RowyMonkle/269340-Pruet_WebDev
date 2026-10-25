@@ -105,6 +105,19 @@ The reference Locust profile (`docs/perf/reference_locustfile.py`, a different t
 | **Contested zone** (25 seats, 1,156 attempts) | Exactly 25 orders win | `hot_zone_orders_won` = **25**, 1,131 × `409`; final `booked_count` = 25 / 25 | **PASS** |
 | **Double payment** (378 repeated payments) | Never charged twice | 378 × `409`; 0 orders with two completed payments after the run | **PASS** |
 
+### 3.4 How Our API Maps to the Specification's Sample Script
+
+The sample script in section 3 of the CP3 specification books with `POST /api/v1/tickets/book` and the body `{"event_id": 1, "user_id": i}`, counts `200` as a success and `409` as a conflict, and asserts `successes == 1`. Our API keeps the same contract (one winner, every other user gets `409`) but differs in three details that follow from the data model. The assertion itself is unchanged.
+
+| Specification sample | Our API | Reason |
+| :--- | :--- | :--- |
+| `POST /api/v1/tickets/book` | `POST /api/v1/orders` | A booking is an **order**: the unit that is held for 10 minutes, paid, expired or cancelled. Its tickets are created by the same request, so there is no separate `/tickets/book` route. |
+| Success is `200 OK` | Success is `201 Created` | The request creates a new resource (the order and its tickets), and `201` is the status for that. Replaying the same `Idempotency-Key` creates no second order: the original order is returned (`200` or `201`). |
+| Body `{"event_id": 1, "user_id": i}` | Body `{"user_id": i, "items": [{"event_id": "<MongoDB ObjectId>", "seat_zone": "...", "seat_number": "..."}]}` | Events live in MongoDB, so their ids are 24-character ObjectIds, not integers, and the buyer names the zone and, for a numbered seat, the seat. |
+| A lost race is `409 Conflict` | A lost race is `409 Conflict` | Identical. A sold-out zone and a taken seat answer `409`, and so do a PostgreSQL deadlock, a serialization failure and a lock timeout caught by the API (`app/core/db_errors.py`). |
+
+`test_last_ticket_20_users` is the specification's example written for these details: 20 threads book an event whose only zone has **one** seat left, and the test asserts `successes == 1` (counting `201`) and `conflicts == 19`. In addition it checks that the MongoDB counter shows exactly one seat taken and that PostgreSQL holds exactly one active ticket for the event.
+
 ---
 
 ## 4. Query Projection & Elimination of $N+1$ Query Bottlenecks

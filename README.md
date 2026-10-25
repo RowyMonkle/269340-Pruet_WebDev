@@ -150,7 +150,7 @@ docker compose exec -e REQUIRE_DB=1 api pytest tests -q
 docker compose exec -e REQUIRE_DB=1 api pytest tests/test_concurrency.py -v -s
 docker compose exec -e API_URL=http://nginx -e REQUIRE_DB=1 api pytest tests/test_concurrency.py -v -s
 ```
-`tests/test_concurrency.py` holds 20 tests: the six original ones (50 buyers for the last seat, same seat twice, idempotency replay and mismatch, paying twice, paying after expiry)
+`tests/test_concurrency.py` holds 22 tests: the six original ones (50 buyers for the last seat, same seat twice, idempotency replay and mismatch, paying twice, paying after expiry)
 plus the CP3 races (20 users for the last ticket, 20 parallel payments, 20 identical idempotency keys, opposite-order seat bookings, pay vs expiry vs sweeper, concurrent profile updates and more).
 What each one proves, and which mechanism it protects, is listed in [section 7.2](#72-how-the-system-prevents-races).
 
@@ -198,8 +198,8 @@ To guarantee eventual consistency across PostgreSQL and MongoDB:
 
 ### 3. Database Projections & Eliminating N+1 Bottlenecks
 - **SQLAlchemy (PostgreSQL)**: the user endpoints select only the columns they return (`load_only(...)`, never `hashed_password`), and every list endpoint runs a constant number of statements (measured in section 7.7, no N+1).
-  The orders list still loads whole entities with `joinedload` and is not paginated; turning it into a projection is a CP3 task (section 7.6).
-- **PyMongo (MongoDB)**: queries use projection dictionaries (e.g. `{"_id": 1, "title": 1, "zones": 1, ...}`); the catalog list still returns whole documents (CP3 task, section 7.6).
+  The orders list is a paginated projection (`GET /orders/summary`; the original `GET /orders?user_id=` redirects to it), measured in section 7.10.
+- **PyMongo (MongoDB)**: queries use projection dictionaries (e.g. `{"_id": 1, "title": 1, "zones": 1, ...}`); the catalog list returns an `EventSummary` computed inside MongoDB, the complete document is `GET /events/{id}` (section 7.10).
 
 ### 4. Zero-Downtime Schema Evolution (Expand and Contract Pattern)
 Use staged schema changes to reduce disruption; DDL can still acquire table locks. The intended workflow is:
@@ -317,15 +317,15 @@ disposable setup.
 ## 7. CP3 — Concurrency Control & Performance Audit (Week 16, 40% of the team grade)
 
 Written by Natthakritta (Backend Lead & Database Architecture) so that the four of us build the rest on **the same design**.
-Everything marked **Done** is in the repository and was verified on a clean stack (numbers in 7.7). Everything marked **TODO**
-has an owner, file names and an acceptance test in 7.6.
+Everything marked **Done** is in the repository and was verified on a clean stack (numbers in 7.7). Everything marked **Open**
+has an owner in 7.6.
 
 ### 7.1 What CP3 asks for and where we stand
 
 | Pts | Requirement (CP3 spec) | Owner | Status |
 | ---: | --- | --- | --- |
 | 35 | Concurrency control (optimistic **or** pessimistic) proven by `test_concurrency.py` | Natthakritta | **Done.** Pessimistic locking + atomic seat counters, `test_concurrency.py` (22 tests), a limit on every wait (7.2, 7.3, 7.9) |
-| 35 | Query projection and zero N+1 on list endpoints | Nannapat (endpoints), Natthakritta (index, DB statistics) | DB side **Done**. Order summaries: `GET /orders/summary` (section 4). Open items for the list endpoints: 7.6 |
+| 35 | Query projection and zero N+1 on list endpoints | Nannapat (endpoints), Natthakritta (index, DB statistics) | **Done.** Order list as a paginated summary (`GET /orders/summary`, the original `GET /orders?user_id=` redirects to it), `EventSummary` for events, projected users; round trips constant while the data grows 50-300 times, `tests/test_query_counts.py` (20 tests, 7.10) |
 | 20 | Load test: >= 50 VUs, 3 min, p95 < 200 ms, p99 < 500 ms, errors < 1 % | Poonyaporn | **Done.** `scripts/k6_script.js`: 50 VUs, 3 min, real writes; 216.1 req/s, p95 60.04 ms, p99 104.07 ms, 0 % failed (7.13) |
 | 10 | `Performance_Audit_Report.pdf` (or a README section) + defence | Pandara (report), everyone (defence) | Report **written** with charts: `docs/Performance_Audit_Report.md` and the summary in 7.13 (the spec accepts a README section). Open: PDF export if the team wants one, the defence script |
 
@@ -362,7 +362,7 @@ sequenceDiagram
 | --- | --- | --- | --- | --- |
 | Seat counter of a zone (MongoDB `zones[].booked_count`) | many buyers, last seats | one atomic conditional update per (event, zone) for the whole quantity: lock-free compare-and-set, all-or-nothing | `order_service.create_order_dual_db` step 4 | `test_oversell_concurrency_protection`, `test_last_ticket_20_users`, `test_multi_ticket_orders_never_oversell`, `test_sold_out_second_zone_returns_the_first_zones_seats` |
 | One seat (PostgreSQL `tickets`) | two buyers, same seat | partial unique index `uq_tickets_event_zone_seat`; event ids canonicalised; seats inserted in one global order | `sql_models.Ticket`, `order_service` | `test_same_seat_concurrency_protection`, `test_event_id_spelling_cannot_bypass_the_seat_lock`, `test_every_order_inserts_its_seats_in_one_global_order`, `test_opposite_order_multi_seat_bookings_never_return_5xx` |
-| An order (`orders` row) | double payment; pay vs expiry vs sweeper | **pessimistic lock** `SELECT ... FOR UPDATE` on the order row; sweeper and outbox worker use `SKIP LOCKED` | `payment_service.process_order_payment`, `order_service.cleanup_expired_seat_holds`, `outbox_worker` | `test_paying_twice_fails_with_400`, `test_parallel_payments_charge_the_order_once`, `test_pay_vs_expiry_vs_cleanup_race_releases_each_seat_once`, `test_parallel_cleanup_releases_each_hold_once` |
+| An order (`orders` row) | double payment; pay vs expiry vs sweeper | **pessimistic lock** `SELECT ... FOR UPDATE` on the order row; sweeper and outbox worker use `SKIP LOCKED` | `payment_service.process_order_payment`, `order_service.cleanup_expired_seat_holds`, `outbox_worker` | `test_paying_twice_fails_with_409`, `test_parallel_payments_charge_the_order_once`, `test_pay_vs_expiry_vs_cleanup_race_releases_each_seat_once`, `test_parallel_cleanup_releases_each_hold_once` |
 | A retried request | the same request twice or 20 times at once | unique `Idempotency-Key` plus a fingerprint of user, event, zone | `order_service` | `test_idempotency_order_placement`, `test_idempotency_payload_mismatch`, `test_parallel_same_idempotency_key_creates_one_order`, `test_idempotent_replay_works_with_any_zone_spelling` |
 | A user row | read-modify-write of names / e-mail | `SELECT ... FOR UPDATE` in `PUT /users/{id}`; unique e-mail answers 409 | `user_service.update_user` | `test_concurrent_user_updates_do_not_lose_each_other` |
 | Anything that still collides | PostgreSQL aborts one side (deadlock, serialization failure) or a lock wait runs past `lock_timeout` (5 s) | answered **409**, seats given back, never 500 | `app/core/db_errors.py`, handler in `app/main.py` | `test_database_deadlock_is_answered_with_409_and_seats_are_returned`, `tests/test_db_errors.py`, `test_a_stuck_row_lock_answers_409_after_lock_timeout_and_frees_the_request` |
@@ -400,14 +400,18 @@ docker compose exec api python scripts/verify_consistency.py --repair   # resets
 
 | File | Tests | Needs | What it proves |
 | --- | ---: | --- | --- |
-| `tests/test_concurrency.py` | 22 | PostgreSQL + MongoDB | every row of the table in 7.2 (3 tests inspect the server process and run in-process only) |
-| `tests/test_consistency.py` | 8 | PostgreSQL + MongoDB | `verify_consistency.py` passes on honest data and catches drift, overselling, double charge, dead orders |
-| `tests/test_query_counts.py` | 20 | PostgreSQL + MongoDB | section 7.10: round trips stay constant while the data grows (no N+1), payloads bounded; the counter is tested too |
+| `tests/test_concurrency.py` | 22 | PostgreSQL + MongoDB | every row of the table in 7.2 (5 tests inspect or patch the server process and run in-process only) |
+| `tests/test_payment_route.py` | 19 | PostgreSQL + MongoDB | `POST /payments` (order id in the body) behaves like `POST /orders/{id}/payments`: same locks and errors, ten clients on one order give one `201` and nine `409` |
+| `tests/test_consistency.py` | 10 | PostgreSQL + MongoDB | `verify_consistency.py` passes on honest data and catches drift, overselling, double charge, dead orders |
+| `tests/test_query_counts.py` | 20 | PostgreSQL + MongoDB | section 7.10: round trips stay constant while the data grows (no N+1), payloads bounded; the counter is tested too (in-process only) |
+| `tests/test_db_guards.py` | 20 | PostgreSQL + MongoDB | section 7.11: the database refuses a second completed payment, an unknown status and an impossible seat counter |
+| `tests/test_index_report.py`, `tests/test_index_usage.py` | 11 + 14 | PostgreSQL | section 7.12: the index detector, and a dropped index must not come back |
 | `tests/test_resilience.py` | 24 | PostgreSQL + MongoDB | section 7.9: a stuck lock, a busy pool, a dead MongoDB, the sweeper, the outbox, the worker, nginx (real mechanisms, not faked errors) |
 | `tests/test_db_errors.py` | 16 | none | SQLSTATE and driver errors to HTTP 409 / 503 mapping |
-| `tests/test_users_api.py`, `test_user_migration.py`, `test_cp2_scripts.py` | 61 | mostly none | CP2 (dual-write, backfill, traffic generator) |
+| `tests/test_users_api.py`, `test_user_migration.py`, `test_cp2_scripts.py` | 23 + 19 + 21 | mostly none | CP2 (dual-write, backfill, traffic generator, the command line of each script) |
 
-In total 151 tests: 149 pass in-process, 1 more runs only through nginx (`API_URL=http://nginx`) and 1 is a documented `xfail` (7.10).
+In total 219 tests: 218 pass in-process and 1 (the real-nginx test in `test_resilience.py`) is skipped there and runs only with `API_URL=http://nginx`. No test is marked `xfail` any more (the payload test of the original `GET /orders?user_id=` passes since the endpoint redirects to the bounded summary, 7.10).
+Through nginx and both replicas, `test_concurrency.py`, `test_payment_route.py`, `test_db_guards.py` and `test_consistency.py` give 66 passed and 5 skipped (the five in-process-only concurrency tests).
 
 `tests/support.py` holds the helpers (client, users and events factory, parallel runner, cleanup). New tests should use it.
 `python tests/test_concurrency.py` runs the concurrency file as a script, like the example in the spec.
@@ -458,15 +462,15 @@ Beyond about 60 requests in flight (2 x 30 connections) a request waits for a co
 
 **Rehearse without touching your dev stack:** set the variables listed at the top of `docker-compose.yml` (`STACK_PREFIX`, `NGINX_PORT`, `PG_VOLUME`, ...) and add `-p rehearsal` to every `docker compose` command.
 
-### 7.5 Design contracts for the work that is left
+### 7.5 Design contracts for new endpoints and scripts
 
 1. **Read endpoints return projections, never ORM entity graphs.** Select the columns you return (`db.query(Order.id, ...)` or `load_only`), count children with aggregates or correlated sub-selects, no `joinedload` in a list, no lazy-loaded relationship while serialising.
 2. **One SELECT per list page plus one COUNT.** Lists use `PaginatedResponse` (`page`, `page_size` <= 100) and order orders by `created_at DESC, id DESC` (the index order).
 3. **Summary vs detail.** A list item is a summary schema without nested tickets or payments. A detail endpoint may include children, still without lazy loads.
 4. **No Mongo or PostgreSQL call inside a loop over tickets or rows.** Batch with `$in`, `bulk_write`, JOIN or aggregation.
 5. **Errors:** collision -> 409 (`app/core/db_errors.py`), validation -> 400, missing -> 404, expired -> 410. Pool exhaustion or timeout -> 503 with `Retry-After`. A request that can be answered must never be a 500.
-6. **Round trips are the budget.** `POST /orders` runs 7 SQL statements, three of them (`refresh`, lazy `tickets`, lazy `payments`) only exist to serialise the response; `POST /orders/{id}/payments` runs 6 whatever the number of tickets (it ran 11 + one per ticket before 7.10). Count with `tests/support.py: QueryCounter`, measure the database side with `pg_stats.py`.
-7. **Load tests live in `loadtest/`** and use Locust; results go to `docs/perf/` (HTML report, CSV, charts). Raw scratch output goes to `loadtest/out/` (ignored by git).
+6. **Round trips are the budget.** `POST /orders` runs 3 SQL statements whatever the number of tickets (it ran 7: `refresh`, lazy `tickets` and lazy `payments` only served to build the response); `POST /orders/{id}/payments` runs 6 whatever the number of tickets (it ran 11 + one per ticket before 7.10). Count with `tests/support.py: QueryCounter`, measure the database side with `pg_stats.py`.
+7. **The official load test is `scripts/k6_script.js`** (k6); the Locust reference profile is `docs/perf/reference_locustfile.py`. The summary goes to `docs/k6_summary.json`, charts and numbers to `docs/perf/`; the raw k6 points (`docs/perf/k6_points.csv`, 56 MB) and `docs/perf/out/` are ignored by git.
 8. **Counting SQL statements in a test:**
 
 ```python
@@ -482,10 +486,11 @@ def count(conn, cursor, statement, parameters, context, executemany):
 ### 7.6 Hand-off: what each person delivers
 
 The checklist form of this section (order of work, who tests what, final checklist) is in [docs/cp3_handoff.md](docs/cp3_handoff.md).
+Status 2026-10-25: **Done** items are merged and covered by tests or by the load test in 7.13; **Open** items are still to do.
 
 **Nannapat — API Engineering & Request Validation (+ web design)**
-1. `GET /api/v1/orders?user_id=` becomes a **paginated summary**: `id, order_number, status, total_amount, expires_at, created_at, ticket_count, paid_amount`, schema `OrderSummary`, envelope `PaginatedResponse`.
-   No ORM entities, no `joinedload`. Reference query (tested: it uses `idx_orders_user_created`, the sub-selects run only for the rows returned, 0.8 ms for a user with 168 orders):
+1. **Done.** The order list is a **paginated summary**: `GET /orders/summary?user_id=&limit=&offset=` and `GET /orders/{id}/summary` (schema `OrderSummary`: `id, order_number, status, total_amount, expires_at, created_at, ticket_count, paid_amount`),
+   and the original `GET /orders?user_id=` redirects (307) to it (329 KB -> 4 KB for 300 orders). No ORM entities and no `joinedload` in the list. Reference query (tested: it uses `idx_orders_user_created`, the sub-selects run only for the rows returned, 0.8 ms for a user with 168 orders):
 
    ```sql
    SELECT o.id, o.order_number, o.status, o.total_amount, o.expires_at, o.created_at,
@@ -495,54 +500,54 @@ The checklist form of this section (order of work, who tests what, final checkli
    ORDER BY o.created_at DESC, o.id DESC LIMIT :page_size OFFSET :offset;
    ```
 
-   `GET /orders/{id}` stays the detail view (tickets and payments) but with projected columns and no lazy loads.
-2. `GET /api/v1/events` list is a **summary** (id, title, category, artist and venue names, date_time, status, lowest price, seats left) without zones, bio, tags and `dynamic_attributes`: done as `EventSummary` (7.10), 100 events weigh 31 KB instead of 124 KB.
-3. `tests/test_query_counts.py`: done (7.10). New list endpoints add a row to `READ_CASES`.
-4. Trim the write path: drop the three response-only SELECTs on `POST /orders` and the four on payments (build the response from the objects you already hold); consider moving the activity-log insert to `BackgroundTasks`.
-5. Errors per contract 5 in 7.5 (503 + `Retry-After` for pool timeouts). Keep the status table of 7.2.
-6. Web design: a booking demo page in `frontend/` that shows what a `409` means to the user ("someone took it, pick another seat") and lists orders page by page. Coordinate with Pandara.
-*Done when:* the new tests pass, `pytest tests` is green, and `pg_stats.py` shows one statement per list request.
+   `GET /orders/{id}` stays the detail view (tickets and payments): one SQL statement for 1 or for 50 tickets and payments, no lazy loads (7.10).
+2. **Done.** `GET /api/v1/events` list is a **summary** (id, title, category, artist and venue names, date_time, status, lowest price, seats left) without zones, bio, tags and `dynamic_attributes`: `EventSummary` (7.10), 100 events weigh 27 KB instead of 124 KB.
+3. **Done.** `tests/test_query_counts.py` (7.10). New list endpoints add a row to `READ_CASES`.
+4. **Done.** Write path trimmed: `POST /orders` runs 3 SQL statements and 3 MongoDB operations for 1 or for 20 tickets (it ran 7 SQL), `POST /orders/{id}/payments` and `POST /payments` run 6 whatever the number of tickets (11 + one per ticket before).
+5. **Done.** Errors per contract 5 in 7.5 (`409` / `410` / `404`, `503` + `Retry-After` for pool timeouts). The status codes are listed in 7.2 (item 6).
+6. **Open.** Web design: a booking demo page in `frontend/` that shows what a `409` means to the user ("someone took it, pick another seat") and lists orders page by page. Coordinate with Pandara.
+
+*Status:* items 1-5 are merged and `pytest tests` is green; item 6 is open.
 
 **Poonyaporn — Data Engineering**
-1. `loadtest/locustfile.py` with the profile below. The run must exit with code 1 when a threshold is broken (set `environment.process_exit_code` in an `events.quitting` listener).
-   * 50 users, ramp 10/s, **180 s**, wait 0.1-0.5 s, through nginx (`--host http://nginx`).
-   * Setup: create one event with a huge zone (1,000,000 seats) for the booking mix; use the seeded users.
-   * Mix (task weights): events list 5, event detail 3, own orders 3, book 3, pay 1, order detail 2, users list 1, user detail 1, **register 1**.
-   * Every 4xx/5xx counts as a failure. Thresholds: p95 < 200 ms, p99 < 500 ms, failures < 1 %.
-2. A second scenario, **contention**: a hot event with N seats and 50 VUs racing for them; exactly N bookings must win, then `verify_consistency.py` must pass.
-3. Data: `seed.py --users 5000 --orders 20000` (more is fine) and a few users with hundreds of orders, so list endpoints are measured on realistic sizes.
-4. Run protocol: `pg_stats.py --reset` -> load test -> `pg_stats.py --top 15 --requests N --csv docs/perf/pg_top.csv` -> `verify_consistency.py`. Keep Locust `--csv` and `--html` output in `docs/perf/`.
-5. Before and after: run the same profile on the commit before the list changes and after them, and give Pandara a comparison table and charts.
-6. Mongo: indexes and `explain()` for the events list (status + date_time).
+1. **Done.** The load test is `scripts/k6_script.js` (k6 is the official tool, see 7.1; the result and charts are in 7.13 and in `docs/Performance_Audit_Report.md`). k6 exits with a non-zero code when a threshold is broken.
+   * 50 VUs through nginx: 10 s ramp up, **180 s at 50 VUs**, 10 s ramp down.
+   * Setup: the script creates its own events, a zone with 1,000,000 seats for the booking mix and a contested zone with 25 seats; it uses the seeded users.
+   * Mix: 65 % reads (events list, event detail, user detail, order summary) and 35 % writes. A write books one ticket (`POST /orders`) and 70 % of the buyers pay **the order that was just returned** (`POST /payments`); 5 % of the payments are repeated on purpose and must answer `409`.
+   * Only the expected status counts as a success (`200` for reads, `201` for a new order and a payment; `409` only for the contested zone and the repeated payment). Thresholds: p95 < 200 ms, p99 < 500 ms, `http_req_failed` < 1 % (k6's own metric), `http_errors` < 1 %, checks > 99 %.
+2. **Done.** Contention scenario, inside the same script: 10 % of the writes race for the 25-seat zone and exactly 25 must win (`hot_zone_orders_won == 25`, checked again in `teardown`; it needs the full 3-minute profile, a short smoke run cannot sell the zone out). `verify_consistency.py` passes afterwards (13 / 13).
+3. **Open (optional).** Bigger data: `seed.py --users 5000 --orders 20000` and a few users with hundreds of orders, so the list endpoints are also measured on larger tables. The official run used the 250 seeded users (report, section 8).
+4. **Open (optional).** Database-side evidence for the k6 run: `pg_stats.py --reset` -> load test -> `pg_stats.py --top 15 --requests N --csv docs/perf/pg_top.csv` -> `verify_consistency.py` (the last step is already in the report, section 7).
+5. **Done for Locust.** Before and after the CP3 backend work, same profile: 7.7. The k6 script was run on the final code only.
+   The Locust profile (`docs/perf/reference_locustfile.py`, 9 task types including `POST /users`) is also the independent cross-check of the k6 run:
 
    ```bash
-   mkdir -p loadtest/out
-   docker run --rm --network 269340-pruet_ticweb_default -v "$PWD/loadtest:/mnt/locust" locustio/locust \
-     -f /mnt/locust/locustfile.py --headless -u 50 -r 10 -t 3m --host http://nginx \
-     --csv /mnt/locust/out/run --html /mnt/locust/out/report.html
+   docker run --rm --network 269340-pruet_ticweb_default -v "$PWD/docs/perf:/mnt/locust" locustio/locust \
+     -f /mnt/locust/reference_locustfile.py --headless -u 50 -r 10 -t 3m --host http://nginx \
+     --csv /mnt/locust/out/reference
    ```
 
-   (PowerShell: `${PWD}` instead of `$PWD`. Use `-p rehearsal` stacks with `--network rehearsal_default`. `pip install locust` also works.)
-*Done when:* a 3-minute run passes all thresholds on a clean stack and the report, CSV and charts are in `docs/perf/`.
+   The k6 command is in 7.13. (PowerShell: `${PWD}` instead of `$PWD`. Use `-p rehearsal` stacks with `--network rehearsal_default`.)
+6. **Open.** Mongo: indexes and `explain()` for the events list (status + date_time).
+
+*Done when:* a 3-minute run passes all thresholds on a clean stack and the report, summary and charts are in `docs/` and `docs/perf/` (met, 7.13); items 3, 4 and 6 are extras.
 
 **Pandara — System Documentation & Frontend Design**
-1. `docs/Performance_Audit_Report.md`, exported to **`Performance_Audit_Report.pdf`** at the repository root (the file name the spec asks for):
-   objectives and rubric mapping; system under test (architecture, versions, machine); concurrency control (table 7.2 and the test output); query audit table
-   (endpoint, SQL statements, payload, before/after); load test setup and charts; consistency audit output; risks; how to reproduce.
-2. Keep README section 7 current (status columns, numbers) and fix any command that no longer works.
-3. Rewrite `docs/audit_demo_script.md` for the CP3 defence: live race demo (7.3), query-count demo, load run, and who answers which question.
-   Known bug to fix there: step 2.2 reads `jq '.[0]._id'` from `/events?limit=1`, but the endpoint answers `{"items": [{"id": ...}]}` and the parameter is `page_size`.
-4. Packaging: `git archive -o 269340_CP3.zip HEAD` contains tracked files only (no `__pycache__`, `.env`, local notes; the CP2 zip held 80 junk entries out of 159). The spec does not say how or where to submit: ask the instructor.
-5. Frontend: pair with Nannapat on the booking demo page.
-*Done when:* the PDF opens, every number in it can be reproduced with a command from this README.
+1. **Done (Markdown).** `docs/Performance_Audit_Report.md`: objectives and rubric mapping; concurrency control (table 7.2 and the test results); query audit table (endpoint, SQL statements, payload); load test setup, results and four charts; consistency audit output; risks; how to reproduce. **Open:** export it to **`Performance_Audit_Report.pdf`** at the repository root (the file name the spec asks for). The spec also accepts a README section, which is 7.13, so the PDF is optional; if it is made, every number must match 7.13.
+2. **Open (ongoing).** Keep README section 7 current (status columns, numbers) and fix any command that no longer works.
+3. **Open.** Rewrite `docs/audit_demo_script.md` for the CP3 defence: live race demo (7.3), query-count demo, load run, and who answers which question.
+   Known bugs to fix there: step 2.2 reads `jq '.[0]._id'` from `/events?limit=1`, but the endpoint answers `{"items": [{"id": ...}]}` and the parameter is `page_size`; paying twice now answers `409`, not `400`.
+4. **Open.** Packaging: `git archive -o 269340_CP3.zip HEAD` contains tracked files only (no `__pycache__`, `.env`, local notes; the CP2 zip held 80 junk entries out of 159). The spec does not say how or where to submit: ask the instructor.
+5. **Open.** Frontend: pair with Nannapat on the booking demo page.
+*Done when:* every number in the report can be reproduced with a command from this README.
 
 **Natthakritta — Backend Lead & Database Architecture (Done; remaining: defence)**
 Concurrency control and its tests, the consistency audit, the booking-path fixes (deadlock, event-id spelling, idempotent replay, all-or-nothing zone reservation),
-migration 0006, `pg_stat_statements` and `scripts/pg_stats.py`, capacity numbers, the baseline in 7.7, and the resilience work in 7.9 (limits on every wait, 409 / 503 mapping, batched sweeper and outbox, nginx fail-over, `scripts/resilience_lab.py`), the database guards in 7.11 (one completed payment per order, status vocabularies, MongoDB seat inventory), and the index review in 7.12 (`scripts/index_report.py`, nine indexes dropped, the sweeper query fixed). Remaining: review teammates' pull requests against the contracts in 7.5 and re-run everything on a clean checkout before we submit.
+migration 0006, `pg_stat_statements` and `scripts/pg_stats.py`, capacity numbers, the baseline in 7.7, and the resilience work in 7.9 (limits on every wait, 409 / 503 mapping, batched sweeper and outbox, nginx fail-over, `scripts/resilience_lab.py`), the database guards in 7.11 (one completed payment per order, status vocabularies, MongoDB seat inventory), the index review in 7.12 (`scripts/index_report.py`, nine indexes dropped, the sweeper query fixed), and the k6 run and report in 7.13 (three full runs on a clean stack, audit after the load). Remaining: re-run everything on a clean checkout (`git archive HEAD`) before we submit, and the defence.
 
-### 7.7 Baseline measurements (what the code does today)
+### 7.7 Baseline measurements (before and after the CP3 backend work)
 
-Measured on a 16-CPU / 15 GiB Docker Desktop host, `docker compose` stack (nginx + 2 replicas + PostgreSQL + MongoDB), Locust mix of 7.6 with 9 task types.
+Measured on a 16-CPU / 15 GiB Docker Desktop host, `docker compose` stack (nginx + 2 replicas + PostgreSQL + MongoDB), Locust profile `docs/perf/reference_locustfile.py` with 9 task types.
 
 **Load, 50 users, mixed read/write through nginx**
 
@@ -573,7 +578,7 @@ Per endpoint (after, p95 / p99): `GET /events` 29 / 79 ms, `GET /events/{id}` 23
 | `GET /orders/{id}` | 1 | 10 ms | 0.8 KB |
 | `GET /events?page_size=100` | 0 (Mongo) | 15 ms | **127 KB** |
 
-There is no N+1 today (statements stay constant). The original `GET /orders?user_id=` loads whole entities and is not paginated; the summary endpoints in section 4 are the projection versions.
+There was no N+1 on these reads (statements stay constant). The original `GET /orders?user_id=` loaded whole entities without pagination (337 KB for 300 orders); it now redirects to the paginated summary (3.8 KB, section 7.10).
 
 **Races on the old booking code** (opposite-order bookings through nginx and both replicas; the same tests now pass): 20 of 150 two-seat rounds, 44 of 100 ten-seat rounds and 49 of 80 thirty-seat rounds returned HTTP 500 `DeadlockDetected`.
 The same seat could be sold twice by spelling the event id in upper case, and replaying a request with a differently-cased zone name answered 409 instead of the original order.
@@ -583,7 +588,7 @@ The same seat could be sold twice by spelling the event id in upper case, and re
 * `POST /users` is slow on purpose (bcrypt); see the p95 note in 7.7.
 * A booking that is cut off between the MongoDB reservation and the PostgreSQL commit leaves one seat reserved with no ticket. It never oversells; run `verify_consistency.py --repair` after a crash test.
 * Multi-event orders (items in different events) are reserved one zone at a time; they are all-or-nothing through compensation, not through one atomic step.
-* The spec's sample script books with `200` and `/tickets/book`; our API answers `201` on `/orders`. Explain this in the report.
+* The spec's sample script books with `200` and `/tickets/book`; our API answers `201` on `POST /orders`. This is explained in the report, section 3.4 ([docs/Performance_Audit_Report.md](docs/Performance_Audit_Report.md)).
 * The CP3 spec does not say how to submit; ask the instructor (same as CP2).
 * nginx, PostgreSQL and MongoDB are single instances: losing one is an outage of what depends on it (the rest keeps working, section 7.9). The replicas' debug ports 8001 / 8002 are published on the host.
 * A PostgreSQL restart (needed once to load `pg_stat_statements`) makes PostgreSQL-backed endpoints answer `503` for the duration; announce it before you do it on a shared stack.
@@ -651,10 +656,10 @@ docker compose exec -e REQUIRE_DB=1 api pytest tests/test_query_counts.py -v -s 
 | `GET /orders/{id}` | 1 -> 50 tickets and payments | 1 -> 1 | - | 20.8 KB (the full detail) |
 | `GET /orders/{id}/payments` | 1 -> 50 payments | 2 -> 2 | - | 10.9 KB |
 | `GET /events`, `GET /products` | page 1 -> 100 events | - | 2 -> 2 | **27 KB** (was 124 KB) |
-| `POST /orders` | 1 -> 20 tickets | 7 -> 7 | 3 -> 3 | - |
+| `POST /orders` | 1 -> 20 tickets | **7 -> 7** before, **3 -> 3** now | 3 -> 3 | - |
 | `POST /orders/{id}/payments` | 1 -> 20 tickets | **11 -> 30** before, **6 -> 6** now | 1 | - |
 | `POST /orders/{id}/payments` on an expired hold | 1 -> 20 tickets | constant (was one UPDATE per ticket) | 1 | - |
-| `GET /orders?user_id=` (original endpoint) | 1 -> 300 orders | 1 -> 1 | - | 326 KB, unbounded (see below) |
+| `GET /orders?user_id=` (original endpoint) | 1 -> 300 orders | 1 -> 1 before; now redirects (307) to the summary: 2 -> 2 | - | 3.8 KB now (was 326 KB, unbounded) |
 
 **Findings**
 
@@ -665,8 +670,8 @@ docker compose exec -e REQUIRE_DB=1 api pytest tests/test_query_counts.py -v -s 
 * **Projection (no whole entities, no unneeded columns):** `GET /users` and `GET /users/{id}` select plain columns (rows, nothing for the session to track);
   `GET /orders/summary` computes `ticket_count` and `paid_amount` in SQL; `GET /events` returns an `EventSummary` computed inside MongoDB (one `$project` stage derives `min_price` and `seats_left`), so zones, bio, tags and
   dynamic attributes never leave the database. The complete document is still `GET /events/{id}`.
-* **Still open:** the original `GET /orders?user_id=` returns whole orders with their tickets and payments and has no pagination (326 KB for 300 orders). The number of queries is constant, the payload is not.
-  `GET /orders/summary` is the bounded version. `test_original_orders_list_payload_is_bounded` is marked `xfail` and starts passing by itself once the original endpoint is bounded.
+* **The original `GET /orders?user_id=` is bounded now:** it used to return whole orders with their tickets and payments without pagination (326 KB for 300 orders; the number of queries was constant, the payload was not).
+  It now redirects to the paginated `GET /orders/summary` (3.8 KB for 300 orders), and `test_original_orders_list_payload_is_bounded` (formerly an `xfail`) passes.
 
 **Rule for new endpoints:** add one row to `READ_CASES` in `tests/test_query_counts.py` (a small and a large path, and the round-trip budget). A list that costs more queries for 100 rows than for 1 does not merge.
 
