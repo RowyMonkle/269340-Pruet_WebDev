@@ -25,7 +25,7 @@ Every figure comes from the audit report (`docs/Performance_Audit_Report.md`), t
 | $p95 < 200$ ms | **60.04 ms** | **PASS** |
 | $p99 < 500$ ms | **104.07 ms** (max 273.98 ms) | **PASS** |
 | HTTP error rate $< 1$ % | **0.00 %** (0 of 43,253 requests, k6's own `http_req_failed`) | **PASS** |
-| Audit report with charts and metrics | `docs/Performance_Audit_Report.md` with four charts, and README 7.13 (the specification accepts a README section; a PDF is optional) | **PASS** |
+| Audit report with charts and metrics | `docs/Performance_Audit_Report.md` with four charts, and README 7.13 (the specification accepts a PDF or a README section: `Performance_Audit_Report.pdf` is in the repository root and README 7.13 has the summary) | **PASS** |
 
 ### 1.2 Other Figures to Know
 
@@ -176,8 +176,8 @@ The ticket platform uses two databases. PostgreSQL holds orders, tickets and pay
 ## 6. Audit Report, Reproduction & Team (10 points)
 
 ### Q22. Where is `Performance_Audit_Report.pdf`, and where are the charts?
-**Answer.** The specification accepts a PDF or a Markdown section in the README. We deliver `docs/Performance_Audit_Report.md` with four charts (throughput over time, latency over time, latency per endpoint, outcome of every request) and README 7.13, which has the PASS table against the specification and two charts. *(Update this answer if a PDF is exported before the defence; every number in it must match 7.13.)*
-**Evidence.** `docs/perf/k6_*.png`, README 7.13.
+**Answer.** The specification accepts a PDF or a Markdown section in the README, and we deliver both. `Performance_Audit_Report.pdf` is in the repository root, the exact file name the specification gives; it is generated from `docs/Performance_Audit_Report.md` with four charts (throughput over time, latency over time, latency per endpoint, outcome of every request). README 7.13 has the PASS table against the specification and two charts. Every file behind the numbers is listed in section 10 of the report.
+**Evidence.** `Performance_Audit_Report.pdf`, `docs/perf/k6_*.png`, README 7.13, report section 10.
 **Owner.** Pandara.
 
 ### Q23. Your test uses `/orders` and `201`; the specification's sample uses `/tickets/book` and `200`.
@@ -200,7 +200,7 @@ The ticket platform uses two databases. PostgreSQL holds orders, tickets and pay
 | Pandara | Documentation & Frontend Design | Q22, the structure of the report, the demo script, packaging (Q26) |
 
 ### Q26. How is the submission packaged?
-**Answer.** `git archive -o 269340_CP3.zip HEAD` contains tracked files only: no `__pycache__`, no `.env`, no local files and not the 56 MB `k6_points.csv`. A plain zip of the folder would include them. The specification does not say how or where to submit, so this must be confirmed with the instructor.
+**Answer.** `CP3_Concurrency_Control_and_Performance_Audit.zip`, built with `git archive --format=zip --prefix=CP3_Concurrency_Control_and_Performance_Audit/ -o CP3_Concurrency_Control_and_Performance_Audit.zip HEAD`: tracked files only (under 1 MB), inside one folder of the same name. No `__pycache__`, no `.env`, no local files, not the 56 MB `k6_points.csv` (the command to recreate it is in report section 9); a plain zip of the folder would include them. It contains `Performance_Audit_Report.pdf` and `SUBMISSION_INDEX.md` (where each deliverable is). The specification does not say how or where to submit, so this must be confirmed with the instructor.
 **Evidence.** README 7.6 (Pandara, item 4).
 **Owner.** Pandara.
 
@@ -217,7 +217,6 @@ Say these before the reviewer asks.
 - **Internal sweep endpoint** `POST /orders/cleanup-expired` has no check of its own: it is hidden by nginx (`404`) and left out of Swagger, and the replicas' debug ports 8001 and 8002 are published on the host (README 7.8, 7.9).
 - **`POST /users`** (bcrypt) is not in the k6 mix and carries the aggregate $p95$ in the Locust mix.
 - **The first-minute throughput dips** (about 175-185 req/s) were not analysed.
-- **No PDF** of the report unless it is exported (the README section is accepted by the specification).
 
 ---
 
@@ -230,7 +229,7 @@ Run these steps in this order on the real stack (`docker compose up -d`, seeded)
 | 1. Race | 1 min | `docker compose exec -e API_URL=http://nginx -e REQUIRE_DB=1 api pytest tests/test_concurrency.py -v -s` | `Successes: 1 (Must be 1) \| Conflicts: 19`; 17 pass, 5 skipped ("only works in-process") |
 | 2. Query counts | 1 min | `docker compose exec -e REQUIRE_DB=1 api pytest tests/test_query_counts.py -v -s` | 20 pass and the audit table (the same round trips at the small and the large size) |
 | 3. Integrity | 30 s | `docker compose exec api python scripts/verify_consistency.py` | `ALL CHECKS PASSED` (13 lines `PASS`) |
-| 4. Load | 3 min 20 s | `docker run --rm --network 269340-pruet_ticweb_default -v "$PWD/scripts:/scripts:ro" -v "$PWD/docs:/out" -e BASE_URL=http://nginx/api/v1 grafana/k6 run /scripts/k6_script.js --summary-export /out/k6_summary.json --out csv=/out/perf/k6_points.csv` | every threshold with a check mark; about 215 req/s, $p95$ about 60 ms, `hot_zone_orders_won` 25 |
+| 4. Load | 3 min 20 s | `docker run --rm --add-host=host.docker.internal:host-gateway -v "$PWD/scripts:/scripts:ro" -v "$PWD/docs:/out" -e BASE_URL=http://host.docker.internal:8000/api/v1 grafana/k6 run /scripts/k6_script.js --summary-export /out/k6_summary.json --out csv=/out/perf/k6_points.csv` | every threshold with a check mark; about 215 req/s, $p95$ about 60 ms, `hot_zone_orders_won` 25 |
 | 5. Integrity again | 30 s | the command of step 3 | `ALL CHECKS PASSED` |
 
 Notes:
@@ -247,6 +246,6 @@ Notes:
 - [ ] `docker compose up -d` is healthy and `docker compose exec api alembic current` shows `0008_drop_redundant_indexes (head)`.
 - [ ] The database is seeded (`docker compose exec api python seed.py`).
 - [ ] `scripts/verify_consistency.py` is clean **before** any `docker compose up` on an existing database (migration 0007 refuses to run if a double charge exists, and then the API does not start).
-- [ ] `docker pull grafana/k6`, and the network name is right (`docker network ls` shows `269340-pruet_ticweb_default`).
+- [ ] `docker pull grafana/k6`, and nginx answers on host port 8000 (`curl http://localhost:8000/nginx-health` prints `ok`).
 - [ ] Everyone has read their questions in sections 3 to 6 and the files named under *Evidence*; the person answering the load-test questions has read `scripts/k6_script.js` and report sections 2, 5 and 8.
-- [ ] The submission channel is confirmed with the instructor and the zip is built with `git archive`.
+- [ ] The submission channel is confirmed with the instructor and `CP3_Concurrency_Control_and_Performance_Audit.zip` is built with `git archive` (command in Q26) from committed files only.
