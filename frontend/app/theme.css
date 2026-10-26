@@ -1,0 +1,435 @@
+/* =====================================================================
+   ENCORE global theme — shared by every page.
+   Change colours, fonts, radius and spacing here; page files (home.css, ...)
+   only use these variables and classes.
+   Values come from the Figma file "ENCORE" (Homepage frame 6:25291).
+   ===================================================================== */
+
+/* ---------- 1. design tokens ---------- */
+:root {
+  /* brand */
+  --plum-900: #24182d; /* darkest: hero, footer */
+  --plum-700: #583d62; /* brand colour: logo, primary buttons, links */
+  --plum-700-hover: #4a3253;
+  --mint: #c1e4dd; /* accent: mint buttons, promise strip, newsletter */
+  --mint-hover: #ade0d6;
+  --gold: #cbaa67; /* "In the spotlight" tag, eyebrows on purple */
+
+  /* neutrals */
+  --ink: #2c2530; /* headings and body text */
+  --muted: #817887; /* secondary text */
+  --lilac: #ddd1e2; /* text on dark backgrounds */
+  --line: #e4dfe6; /* borders and dividers */
+  --mist: #f2eff3; /* soft panels, genre tiles */
+  --paper: #faf9f7; /* page background */
+  --white: #ffffff;
+
+  /* status badges */
+  --amber-bg: #f8f1e2;
+  --amber-fg: #846624; /* Selling fast, Coming soon */
+  --green-bg: #edf7f4;
+  --green-fg: #276d59; /* On sale */
+  --red-bg: #fbeaea;
+  --red-fg: #9b2c2c; /* Sold out, errors */
+
+  /* type */
+  --sans: "Inter", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --serif: "Bodoni Moda", "Didot", Georgia, serif;
+
+  /* shape and spacing */
+  --radius-sm: 4px;
+  --radius: 8px;
+  --radius-lg: 12px;
+  --radius-pill: 100px;
+  --gutter: 72px; /* page side padding (shrinks on small screens, see 9.) */
+  --section-y: 56px; /* vertical padding of a section */
+  --control-h: 46px; /* button and small input height */
+  --field-h: 54px; /* search field height */
+  --shadow: 0 8px 24px rgba(36, 24, 45, 0.25);
+}
+
+/* ---------- 2. reset and base ---------- */
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+html {
+  scroll-behavior: smooth;
+}
+body {
+  margin: 0;
+  background: var(--paper);
+  color: var(--ink);
+  font-family: var(--sans);
+  font-size: 14px;
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+}
+img {
+  display: block;
+  max-width: 100%;
+}
+a {
+  color: inherit;
+  text-decoration: none;
+}
+button,
+input,
+select {
+  font: inherit;
+  color: inherit;
+}
+h1,
+h2,
+h3,
+p {
+  margin: 0;
+}
+ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+:focus-visible {
+  outline: 2px solid var(--plum-700);
+  outline-offset: 2px;
+}
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+/* ---------- 3. layout ---------- */
+.container {
+  width: 100%;
+  max-width: 1440px;
+  margin: 0 auto;
+  padding: 0 var(--gutter);
+}
+.section {
+  padding: var(--section-y) 0;
+}
+.section-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 24px;
+}
+
+/* ---------- 4. typography ---------- */
+.h-28 {
+  font-size: 28px;
+  font-weight: 600;
+  line-height: 1.12;
+}
+.h-32 {
+  font-size: 32px;
+  font-weight: 600;
+  line-height: 1.12;
+}
+.display {
+  font-family: var(--serif);
+  font-weight: 500;
+  line-height: 1.12;
+}
+.muted-12 {
+  font-size: 12px;
+  color: var(--muted);
+}
+.muted-14 {
+  font-size: 14px;
+  color: var(--muted);
+  margin-top: 8px;
+}
+.eyebrow {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+}
+.eyebrow--mint {
+  color: var(--mint);
+}
+.eyebrow--gold {
+  color: var(--gold);
+}
+.eyebrow--purple {
+  color: var(--plum-700);
+}
+
+/* ---------- 5. brand ---------- */
+.brand {
+  display: inline-flex;
+  align-items: center;
+  gap: 9px;
+}
+.brand__name {
+  font-size: 24px;
+  font-weight: 800;
+  color: var(--plum-700);
+  white-space: nowrap;
+}
+.brand__name--light {
+  color: var(--white);
+}
+
+/* ---------- 6. buttons ---------- */
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  height: var(--control-h);
+  padding: 0 20px;
+  border-radius: var(--radius);
+  font-size: 13px;
+  font-weight: 600;
+  white-space: nowrap;
+  border: 1px solid transparent;
+  background: none;
+  cursor: pointer;
+  transition:
+    background-color 0.15s,
+    border-color 0.15s,
+    transform 0.15s;
+}
+.btn:active {
+  transform: translateY(1px);
+}
+.btn--primary {
+  background: var(--plum-700);
+  color: var(--white);
+}
+.btn--primary:hover {
+  background: var(--plum-700-hover);
+}
+.btn--mint {
+  background: var(--mint);
+  color: var(--plum-900);
+}
+.btn--mint:hover {
+  background: var(--mint-hover);
+}
+.btn--outline {
+  background: var(--white);
+  border-color: var(--line);
+  color: var(--plum-700);
+}
+.btn--outline:hover {
+  border-color: var(--plum-700);
+}
+.btn--ghost {
+  background: rgba(255, 255, 255, 0.07);
+  border-color: rgba(255, 255, 255, 0.33);
+  color: var(--white);
+}
+.btn--ghost:hover {
+  background: rgba(255, 255, 255, 0.14);
+}
+.btn[aria-pressed="true"] {
+  background: var(--plum-700);
+  border-color: var(--plum-700);
+  color: var(--white);
+}
+.btn[aria-pressed="true"] img {
+  filter: brightness(0) invert(1);
+}
+.icon-btn {
+  display: inline-flex;
+  padding: 0;
+  border: 0;
+  background: none;
+  cursor: pointer;
+}
+.icon-btn:hover {
+  opacity: 0.75;
+}
+
+/* ---------- 7. tags, badges, chips ---------- */
+.badge {
+  display: inline-block;
+  padding: 5px 10px;
+  border-radius: var(--radius-pill);
+  font-size: 11px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+.badge--fast,
+.badge--soon {
+  background: var(--amber-bg);
+  color: var(--amber-fg);
+}
+.badge--sale {
+  background: var(--green-bg);
+  color: var(--green-fg);
+}
+.badge--out {
+  background: var(--red-bg);
+  color: var(--red-fg);
+}
+.tag-gold {
+  background: var(--gold);
+  color: var(--plum-900);
+  font-size: 10px;
+  font-weight: 700;
+  padding: 7px 12px;
+  border-radius: var(--radius-sm);
+}
+
+.chips {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.chip {
+  padding: 9px 16px;
+  border-radius: var(--radius-pill);
+  border: 1px solid var(--line);
+  background: var(--white);
+  color: var(--muted);
+  font-size: 12px;
+  cursor: pointer;
+}
+.chip:hover {
+  border-color: var(--plum-700);
+  color: var(--plum-700);
+}
+.chip.is-active {
+  background: var(--plum-700);
+  border-color: var(--plum-700);
+  color: var(--white);
+}
+
+/* ---------- 8. form fields ---------- */
+.field {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  height: var(--field-h);
+  background: var(--white);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+}
+.field:focus-within {
+  border-color: var(--plum-700);
+}
+.field--search {
+  flex: 1 1 auto;
+  min-width: 0;
+  padding: 0 18px;
+}
+.field--search input {
+  flex: 1;
+  min-width: 0;
+  border: 0;
+  outline: 0;
+  background: none;
+  font-size: 14px;
+}
+.field--search input::placeholder {
+  color: var(--muted);
+}
+.field--select {
+  flex: 0 0 178px;
+}
+.field--select select {
+  appearance: none;
+  -webkit-appearance: none;
+  width: 100%;
+  height: 100%;
+  border: 0;
+  outline: 0;
+  background: none;
+  padding: 0 40px 0 16px;
+  font-size: 12px;
+  cursor: pointer;
+}
+.field--select img {
+  position: absolute;
+  right: 16px;
+  pointer-events: none;
+}
+.input {
+  height: var(--control-h);
+  padding: 0 14px;
+  border: 1px solid transparent;
+  border-radius: var(--radius);
+  background: var(--white);
+  font-size: 12px;
+  outline: 0;
+}
+.input::placeholder {
+  color: var(--muted);
+}
+.input:focus {
+  border-color: var(--plum-700);
+}
+.input[aria-invalid="true"] {
+  border-color: var(--red-fg);
+}
+
+/* ---------- 9. toast ---------- */
+.toast {
+  position: fixed;
+  left: 50%;
+  bottom: 24px;
+  z-index: 50;
+  max-width: calc(100% - 32px);
+  transform: translate(-50%, 20px);
+  opacity: 0;
+  background: var(--plum-900);
+  color: var(--white);
+  padding: 12px 18px;
+  border-radius: var(--radius);
+  font-size: 13px;
+  box-shadow: var(--shadow);
+  transition:
+    opacity 0.2s,
+    transform 0.2s;
+}
+.toast.is-visible {
+  opacity: 1;
+  transform: translate(-50%, 0);
+}
+
+/* ---------- 10. responsive tokens ---------- */
+@media (max-width: 1200px) {
+  :root {
+    --gutter: 40px;
+  }
+}
+@media (max-width: 900px) {
+  .section-head {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+}
+@media (max-width: 600px) {
+  :root {
+    --gutter: 16px;
+    --section-y: 40px;
+  }
+  .h-28,
+  .h-32 {
+    font-size: 24px;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  html {
+    scroll-behavior: auto;
+  }
+  *,
+  *::before,
+  *::after {
+    transition: none !important;
+    animation: none !important;
+  }
+}

@@ -264,7 +264,7 @@ def test_booking_costs_the_same_round_trips_for_1_and_for_20_tickets(env, big_ev
         AUDIT.append(("POST /orders (booking)", f"{tickets} ticket(s)", counted.sql, counted.mongo, 0.0))
     assert (counts[20].sql, counts[20].mongo) == (counts[1].sql, counts[1].mongo), (
         f"booking is N+1: 1 ticket {counts[1].sql}/{counts[1].mongo}, 20 tickets {counts[20].sql}/{counts[20].mongo}\n{counts[20].statements}")
-    assert counts[20].sql <= 3 and counts[20].mongo <= 3, f"booking budget: INSERT order + INSERT tickets + INSERT outbox, got {counts[20].sql}: {counts[20].statements}"  # CHANGE round trip 8 -> 3 after removing the user SELECT, refresh and lazy loads
+    assert counts[20].sql <= 3 and counts[20].mongo <= 3, f"booking budget: INSERT order + INSERT tickets + INSERT outbox, got {counts[20].sql}: {counts[20].statements}"  # CHANGE  8 -> 3 after removing the user SELECT, refresh and lazy loads
 
 
 def test_payment_costs_the_same_round_trips_for_1_and_for_20_tickets(env, big_event):
