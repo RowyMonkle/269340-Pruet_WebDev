@@ -1,0 +1,504 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>ENCORE — Live concerts</title>
+    <meta
+      name="description"
+      content="Find your next live moment with ENCORE."
+    />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Bodoni+Moda:opsz,wght@6..96,400;6..96,500&family=Inter:wght@400;500;600;700;800&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="theme.css" />
+    <!-- global theme: colours, fonts, buttons, fields -->
+    <link rel="stylesheet" href="home.css" />
+    <!-- homepage layout only -->
+  </head>
+  <body>
+    <!-- ================= Hero and navigation ================= -->
+    <header class="nav">
+      <div class="container nav__inner">
+        <a class="brand" href="./" aria-label="Home">
+          <img src="assets/audio-lines.svg" width="26" height="26" alt="" />
+          <span class="brand__name">JUNG PA!</span>
+        </a>
+        <nav class="nav__links" aria-label="Main">
+          <a href="#discover" class="is-active">Discover</a>
+          <a href="#concerts">Concerts</a>
+          <a href="#artists">Artists</a>
+          <a href="#tickets">Your tickets</a>
+        </nav>
+        <div class="nav__actions">
+          <span class="nav__location">
+            <img src="assets/map-pin.svg" width="17" height="17" alt="" />
+            Bangkok, TH
+          </span>
+          <a class="btn btn--outline" href="#login">Log in / Sign up</a>
+        </div>
+      </div>
+    </header>
+
+    <main id="discover">
+      <section class="hero" aria-labelledby="hero-title">
+        <img
+          class="hero__photo"
+          src="assets/hero.png"
+          alt="Singer performing on a stage under purple lights"
+        />
+        <div class="hero__scrim" aria-hidden="true"></div>
+        <div class="container hero__inner">
+          <div class="hero__copy">
+            <p class="eyebrow eyebrow--mint">THE WORLD IS BETTER LIVE.</p>
+            <h1 id="hero-title" class="display hero__title">
+              Be there.<br />Feel everything.
+            </h1>
+            <p class="hero__lead">
+              The artists you love. The nights you’ll remember. Find your next
+              live moment with ENCORE.
+            </p>
+            <div class="hero__actions">
+              <a class="btn btn--mint" href="#concerts"
+                >Explore concerts
+                <img
+                  src="assets/arrow-right-dark.svg"
+                  width="16"
+                  height="16"
+                  alt=""
+              /></a>
+              <a class="btn btn--ghost" id="hero-artist-btn" href="#artists"
+                >Meet Luna Vale</a
+              >
+            </div>
+          </div>
+          <div class="hero__meta">
+            <div class="hero__teaser" aria-live="polite">
+              <span class="tag-gold">IN THE SPOTLIGHT</span>
+              <a
+                class="hero__teaser-title"
+                id="hero-teaser-title"
+                href="#concerts"
+                >Luna Vale — Afterglow Tour</a
+              >
+              <span class="hero__teaser-when" id="hero-teaser-when"
+                >14 NOV 2026 · THE O2, LONDON</span
+              >
+            </div>
+            <div class="hero__pager">
+              <span id="hero-count">01 / 03</span>
+              <button
+                type="button"
+                class="icon-btn"
+                id="hero-prev"
+                aria-label="Previous featured concert"
+              >
+                <img
+                  src="assets/arrow-left-white.svg"
+                  width="18"
+                  height="18"
+                  alt=""
+                />
+              </button>
+              <button
+                type="button"
+                class="icon-btn"
+                id="hero-next"
+                aria-label="Next featured concert"
+              >
+                <img
+                  src="assets/arrow-right-white-sm.svg"
+                  width="18"
+                  height="18"
+                  alt=""
+                />
+              </button>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <div class="promise" aria-label="Why ENCORE">
+        <div class="container promise__inner">
+          <span>OFFICIAL TICKETS. REAL MOMENTS.</span>
+          <span>120+ ARTISTS</span>
+          <span>40+ INCREDIBLE VENUES</span>
+          <span>ONE UNFORGETTABLE NIGHT</span>
+        </div>
+      </div>
+
+      <!-- ================= Concert discovery ================= -->
+      <section class="section discovery">
+        <div class="container">
+          <form class="search" id="search-form" role="search">
+            <div class="search__heading">
+              <h2 class="h-28">What does your next night sound like?</h2>
+              <p class="muted-12">Made for your kind of live.</p>
+            </div>
+            <div class="search__controls">
+              <label class="field field--search">
+                <img src="assets/search.svg" width="20" height="20" alt="" />
+                <span class="sr-only">Search</span>
+                <input
+                  type="search"
+                  id="search-q"
+                  placeholder="Search artists, concerts or venues"
+                  autocomplete="off"
+                />
+              </label>
+              <label class="field field--select">
+                <span class="sr-only">City</span>
+                <select id="search-city">
+                  <option value="">Any city</option>
+                </select>
+                <img
+                  src="assets/chevron-down.svg"
+                  width="15"
+                  height="15"
+                  alt=""
+                />
+              </label>
+              <label class="field field--select">
+                <span class="sr-only">Date</span>
+                <select id="search-date">
+                  <option value="">Any date</option>
+                  <option value="weekend">This weekend</option>
+                  <option value="month">Next 30 days</option>
+                </select>
+                <img
+                  src="assets/chevron-down.svg"
+                  width="15"
+                  height="15"
+                  alt=""
+                />
+              </label>
+              <label class="field field--select">
+                <span class="sr-only">Genre</span>
+                <select id="search-genre">
+                  <option value="">All genres</option>
+                </select>
+                <img
+                  src="assets/chevron-down.svg"
+                  width="15"
+                  height="15"
+                  alt=""
+                />
+              </label>
+              <button type="submit" class="btn btn--primary">
+                Find my night
+                <img
+                  src="assets/arrow-right-white.svg"
+                  width="16"
+                  height="16"
+                  alt=""
+                />
+              </button>
+            </div>
+          </form>
+
+          <div class="onsale" id="concerts">
+            <div class="section-head">
+              <div>
+                <h2 class="h-32">Good nights, on sale now.</h2>
+                <p class="muted-14">
+                  Your favourite artists. Your next favourite memory.
+                </p>
+              </div>
+              <button type="button" class="btn btn--outline" id="view-all">
+                View all concerts
+                <img
+                  src="assets/arrow-right-purple.svg"
+                  width="16"
+                  height="16"
+                  alt=""
+                />
+              </button>
+            </div>
+
+            <div
+              class="chips"
+              role="group"
+              aria-label="Quick filters"
+              id="chips"
+            >
+              <button
+                type="button"
+                class="chip is-active"
+                data-chip="all"
+                aria-pressed="true"
+              >
+                All concerts
+              </button>
+              <button
+                type="button"
+                class="chip"
+                data-chip="foryou"
+                aria-pressed="false"
+              >
+                For you
+              </button>
+              <button
+                type="button"
+                class="chip"
+                data-chip="weekend"
+                aria-pressed="false"
+              >
+                This weekend
+              </button>
+              <button
+                type="button"
+                class="chip"
+                data-chip="budget"
+                aria-pressed="false"
+                id="chip-budget"
+              >
+                Under ฿2,000
+              </button>
+              <button
+                type="button"
+                class="chip"
+                data-chip="fast"
+                aria-pressed="false"
+              >
+                Selling fast
+              </button>
+            </div>
+
+            <div class="grid" id="concert-grid" aria-live="polite"></div>
+            <p class="empty" id="concert-empty" hidden>
+              No concerts match this search yet. Try another filter.
+            </p>
+          </div>
+
+          <div class="genres">
+            <p class="genres__label">Follow your frequency</p>
+            <div class="genres__list" id="genre-list">
+              <button type="button" class="genre" data-genre="Pop">Pop</button>
+              <button type="button" class="genre" data-genre="Indie">
+                Indie &amp; alternative
+              </button>
+              <button type="button" class="genre" data-genre="Electronic">
+                Electronic
+              </button>
+              <button type="button" class="genre" data-genre="R&amp;B">
+                R&amp;B &amp; soul
+              </button>
+              <button type="button" class="genre" data-genre="Rock">
+                Rock
+              </button>
+              <button type="button" class="genre" data-genre="Jazz">
+                Jazz
+              </button>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ================= Editorial discoveries ================= -->
+      <section class="spotlight">
+        <div class="container spotlight__inner">
+          <img
+            class="spotlight__photo"
+            src="assets/spotlight.png"
+            alt="Maya Sol singing on stage"
+          />
+          <div class="spotlight__story">
+            <p class="eyebrow eyebrow--gold">ENCORE SPOTLIGHT / MAYA SOL</p>
+            <h2 class="display spotlight__title">
+              Some voices stay<br />with you.
+            </h2>
+            <p class="spotlight__copy">
+              One stage. A thousand stories. Experience Maya Sol’s Golden Hour
+              Sessions at the Roundhouse — an intimate evening of soul,
+              connection and songs that feel like home.
+            </p>
+            <p class="spotlight__when">28 NOVEMBER · ROUNDHOUSE, LONDON</p>
+            <a class="btn btn--mint" href="#concerts"
+              >Discover the show
+              <img
+                src="assets/arrow-right-dark.svg"
+                width="16"
+                height="16"
+                alt=""
+            /></a>
+          </div>
+        </div>
+      </section>
+
+      <section class="section upcoming">
+        <div class="container">
+          <div class="section-head">
+            <div>
+              <h2 class="h-32">Something to look forward to.</h2>
+              <p class="muted-14">
+                Get ahead of the crowd. Your next favourite show is coming soon.
+              </p>
+            </div>
+            <a class="btn btn--outline" href="#concerts"
+              >All upcoming
+              <img
+                src="assets/arrow-right-purple.svg"
+                width="16"
+                height="16"
+                alt=""
+            /></a>
+          </div>
+          <ul class="upcoming__list" id="upcoming-list"></ul>
+        </div>
+      </section>
+
+      <section class="section artists" id="artists">
+        <div class="container">
+          <div class="section-head">
+            <div>
+              <h2 class="h-32">The artists. The energy.</h2>
+              <p class="muted-14">
+                Follow the names you love and never miss an announcement.
+              </p>
+            </div>
+            <a class="btn btn--outline" href="#concerts"
+              >Explore artists
+              <img
+                src="assets/arrow-right-purple.svg"
+                width="16"
+                height="16"
+                alt=""
+            /></a>
+          </div>
+          <ul class="artists__grid" id="artist-grid"></ul>
+        </div>
+      </section>
+
+      <!-- ================= Service and community ================= -->
+      <section class="trust">
+        <div class="container">
+          <div class="trust__head">
+            <h2 class="h-32">All the excitement. None of the worry.</h2>
+            <p class="trust__rating">★ 4.9 / 5 · Loved by 12,000+ fans</p>
+          </div>
+          <div class="trust__grid">
+            <div class="benefit">
+              <img
+                src="assets/shield-check.svg"
+                width="28"
+                height="28"
+                alt=""
+              />
+              <h3>Always official</h3>
+              <p>
+                Verified tickets, direct from artists and venue partners. Your
+                place in the crowd is guaranteed.
+              </p>
+            </div>
+            <div class="benefit">
+              <img src="assets/scan-line.svg" width="28" height="28" alt="" />
+              <h3>Straight to your phone</h3>
+              <p>
+                Skip the printer. Your secure mobile tickets are ready when you
+                are.
+              </p>
+            </div>
+            <div class="benefit">
+              <img src="assets/headphones.svg" width="28" height="28" alt="" />
+              <h3>Here for your night</h3>
+              <p>
+                Real people, real support. From your first question to the final
+                encore.
+              </p>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="newsletter">
+        <div class="container newsletter__inner">
+          <div class="newsletter__copy">
+            <p class="eyebrow eyebrow--purple">
+              FIRST TO KNOW. FIRST IN THE CROWD.
+            </p>
+            <h2 class="display newsletter__title">Don’t miss your moment.</h2>
+            <p class="newsletter__lead">
+              Fresh announcements, presale access and a little backstage magic.
+            </p>
+          </div>
+          <form class="signup" id="signup-form" novalidate>
+            <div class="signup__controls">
+              <label class="sr-only" for="signup-email">Email address</label>
+              <input
+                type="email"
+                class="input"
+                id="signup-email"
+                placeholder="Your email address"
+                required
+                autocomplete="email"
+              />
+              <button type="submit" class="btn btn--primary">
+                Count me in
+                <img
+                  src="assets/arrow-right-white.svg"
+                  width="16"
+                  height="16"
+                  alt=""
+                />
+              </button>
+            </div>
+            <p class="signup__note" id="signup-note">
+              By subscribing, you agree to our Privacy Policy. Unsubscribe
+              anytime.
+            </p>
+          </form>
+        </div>
+      </section>
+    </main>
+
+    <footer class="footer" id="tickets">
+      <div class="container">
+        <div class="footer__top">
+          <div class="footer__brand">
+            <span class="brand">
+              <img
+                src="assets/audio-lines-light.svg"
+                width="26"
+                height="26"
+                alt=""
+              />
+              <span class="brand__name brand__name--light">ENCORE</span>
+            </span>
+            <p>
+              For the nights you’ll never forget.<br />Your next live moment
+              starts here.
+            </p>
+          </div>
+          <div class="footer__col">
+            <h3>Explore</h3>
+            <a href="#concerts">Concerts</a><a href="#artists">Artists</a
+            ><a href="#concerts">Venues</a>
+          </div>
+          <div class="footer__col">
+            <h3>Your ENCORE</h3>
+            <a href="#tickets">Your tickets</a><a href="#help">Help centre</a
+            ><a href="#accessibility">Accessibility</a>
+          </div>
+          <div class="footer__col">
+            <h3>About us</h3>
+            <a href="#story">Our story</a><a href="#partners">Partner with us</a
+            ><a href="#contact">Contact</a>
+          </div>
+        </div>
+        <div class="footer__legal">
+          <span>© 2026 ENCORE. Made for the live moment.</span>
+          <span class="footer__legal-links"
+            ><a href="#privacy">Privacy policy</a
+            ><a href="#terms">Terms of use</a
+            ><a href="#cookies">Cookies</a></span
+          >
+        </div>
+      </div>
+    </footer>
+
+    <script src="app.js"></script>
+  </body>
+</html>

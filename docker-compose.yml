@@ -129,6 +129,7 @@ services:
       - "${NGINX_PORT:-8000}:80"
     volumes:
       - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./frontend/app:/usr/share/nginx/html:ro # nginx serves the ENCORE frontend (html/css/js/assets) directly; read-only, edits show on refresh
     depends_on:
       api:
         condition: service_healthy
