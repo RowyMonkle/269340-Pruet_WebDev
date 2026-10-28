@@ -1,0 +1,166 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Choose your seats — ENCORE</title>
+  <meta name="description" content="Pick your section and seats, then continue to checkout." />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Bodoni+Moda:opsz,wght@6..96,400;6..96,500&family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="../theme.css" /><!-- global theme + nav/footer -->
+  <link rel="stylesheet" href="seats.css" /><!-- seat selection layout only -->
+</head>
+<body>
+  <!-- ================= Navigation (same markup as index.html) ================= -->
+  <header class="nav">
+    <div class="container nav__inner">
+      <a class="brand" href="../" aria-label="Home">
+        <img src="../assets/audio-lines.svg" width="26" height="26" alt="" />
+        <span class="brand__name">JUNG PA!</span>
+      </a>
+      <nav class="nav__links" aria-label="Main">
+        <a href="../#discover">Discover</a>
+        <a href="../#concerts" class="is-active">Concerts</a>
+        <a href="../#artists">Artists</a>
+        <a href="../#tickets">Your tickets</a>
+      </nav>
+      <div class="nav__actions">
+        <span class="nav__location">
+          <img src="../assets/map-pin.svg" width="17" height="17" alt="" />
+          Bangkok, TH
+        </span>
+        <a class="btn btn--outline" href="#login">Log in / Sign up</a>
+      </div>
+    </div>
+  </header>
+
+  <main class="container booking" id="booking" aria-busy="true">
+    <!-- step indicator shared by the booking pages (seats -> checkout -> tickets) -->
+    <ol class="steps" aria-label="Booking progress">
+      <li class="steps__item is-current" aria-current="step"><span>1</span>Choose seats</li>
+      <li class="steps__item"><span>2</span>Checkout</li>
+      <li class="steps__item"><span>3</span>Your tickets</li>
+    </ol>
+
+    <div class="booking__head">
+      <div>
+        <h1 class="booking__title">Find your favourite view.</h1>
+        <p class="booking__meta" id="event-meta"><a id="back-link" href="../#concerts">← Back to concert</a></p>
+      </div>
+      <span class="badge badge--fast" id="hold-badge">Seats held for 10:00 at checkout</span>
+    </div>
+
+    <!-- error state (bad id / API down) -->
+    <section class="panel bstate" id="seats-error" hidden>
+      <h2 class="h-28" id="error-title">We couldn’t find that concert.</h2>
+      <p class="muted-14" id="error-text">The link may be old or the concert may have been removed.</p>
+      <div class="bstate__actions">
+        <a class="btn btn--primary" href="../#concerts">Browse concerts</a>
+        <button type="button" class="btn btn--outline" id="retry-btn" hidden>Try again</button>
+      </div>
+    </section>
+
+    <div class="workspace" id="workspace">
+      <div class="workspace__main">
+        <!-- ================= Seating plan ================= -->
+        <section class="panel plan" aria-labelledby="plan-title">
+          <div class="plan__head">
+            <h2 id="plan-title">Choose your seats</h2>
+            <p>Select a section, then pick your seats</p>
+          </div>
+
+          <div class="plan__toolbar">
+            <span class="badge badge--plum" id="zone-badge">No section selected</span>
+            <div class="zoom" role="group" aria-label="Seat map zoom">
+              <button type="button" class="icon-btn" id="zoom-out" aria-label="Zoom out"><img src="../assets/minus.svg" width="16" height="16" alt="" /></button>
+              <span id="zoom-level" aria-live="polite">100%</span>
+              <button type="button" class="icon-btn" id="zoom-in" aria-label="Zoom in"><img src="../assets/plus.svg" width="16" height="16" alt="" /></button>
+              <button type="button" class="icon-btn" id="zoom-full" aria-label="Full screen seat map"><img src="../assets/maximize.svg" width="16" height="16" alt="" /></button>
+            </div>
+          </div>
+
+          <!-- venue overview: one button per zone, dearest nearest the stage (built by seats.js) -->
+          <div class="arena">
+            <div class="arena__stage">STAGE</div>
+            <div class="arena__zones" id="arena-zones" role="group" aria-label="Sections"></div>
+          </div>
+
+          <div class="plan__detail">
+            <p class="plan__zone" id="zone-title">Pick a section above to see its seats</p>
+            <p class="plan__front">Front of stage ↑</p>
+          </div>
+
+          <div class="seatgrid" id="seat-grid-wrap">
+            <div class="seatgrid__scroll">
+              <div class="seatgrid__rows" id="seat-grid" role="grid" aria-label="Seats"></div>
+            </div>
+            <!-- big zones are shown 6 rows at a time -->
+            <div class="seatgrid__pager" id="row-pager" hidden>
+              <button type="button" class="btn btn--outline btn--sm" id="rows-prev">← Closer rows</button>
+              <span id="rows-label"></span>
+              <button type="button" class="btn btn--outline btn--sm" id="rows-next">Further rows →</button>
+            </div>
+          </div>
+
+          <ul class="legend" aria-label="Seat legend">
+            <li><i class="seat-swatch"></i>Available</li>
+            <li><i class="seat-swatch seat-swatch--taken"></i>Unavailable</li>
+            <li><i class="seat-swatch seat-swatch--selected"></i>Selected</li>
+            <li><i class="seat-swatch seat-swatch--access"></i>Accessible</li>
+          </ul>
+        </section>
+
+        <!-- ================= Ticket categories ================= -->
+        <div class="cats" id="categories" role="group" aria-label="Ticket categories"></div>
+
+        <p class="access-help">
+          <img src="../assets/accessibility.svg" width="20" height="20" alt="" />
+          <span>Need accessible seating or a companion ticket? Our team can help. <a href="#accessibility">Contact accessibility support ↗</a></span>
+        </p>
+      </div>
+
+      <!-- ================= Order summary ================= -->
+      <aside class="panel summary" aria-labelledby="summary-title">
+        <div class="summary__head">
+          <h2 id="summary-title">Your night, reserved</h2>
+          <span class="badge badge--plum" id="ticket-count">0 tickets</span>
+        </div>
+        <img class="summary__photo" src="../assets/seats-photo.png" alt="" />
+        <div class="summary__event">
+          <p class="summary__name" id="sum-name">…</p>
+          <p class="summary__when" id="sum-when"></p>
+          <p class="summary__when" id="sum-where"></p>
+        </div>
+
+        <ul class="summary__seats" id="sum-seats" aria-live="polite"></ul>
+        <p class="summary__empty" id="sum-empty">No seats yet. Pick up to <span id="max-tickets">6</span> seats on the map.</p>
+
+        <hr class="summary__rule" />
+        <div class="line"><span id="sum-tickets-label">Tickets</span><span id="sum-tickets">฿0</span></div>
+        <div class="line"><span>Mobile ticket delivery</span><span>Free</span></div>
+        <div class="line line--total"><span>Total to pay</span><strong id="sum-total">฿0</strong></div>
+        <p class="summary__note">All prices in THB. No surprises at checkout.</p>
+
+        <button type="button" class="btn btn--primary summary__cta" id="checkout-btn" disabled>
+          Continue to checkout <img src="../assets/arrow-right-white.svg" width="16" height="16" alt="" />
+        </button>
+        <p class="summary__error" id="checkout-error" role="alert" hidden></p>
+        <p class="summary__safe"><img src="../assets/shield-check.svg" width="16" height="16" alt="" />Official tickets. Secure from seat to stage.</p>
+      </aside>
+    </div>
+  </main>
+
+  <footer class="footer footer--slim">
+    <div class="container">
+      <div class="footer__legal">
+        <span>© 2026 ENCORE. Made for the live moment.</span>
+        <span class="footer__legal-links"><a href="#privacy">Privacy policy</a><a href="#terms">Terms of use</a><a href="#cookies">Cookies</a></span>
+      </div>
+    </div>
+  </footer>
+
+  <script src="../session.js"></script><!-- logged-in user + nav button (shared) -->
+  <script src="seats.js"></script>
+</body>
+</html>

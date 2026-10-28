@@ -1,0 +1,78 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Create your account — ENCORE</title>
+  <meta name="description" content="Join ENCORE for tickets, favourite artists and presales in one place." />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Bodoni+Moda:opsz,wght@6..96,400;6..96,500&family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="../theme.css" />
+  <link rel="stylesheet" href="../login/auth.css" />
+</head>
+<body class="auth-page">
+  <div class="auth">
+    <aside class="auth__art" aria-hidden="true">
+      <img class="auth__photo" src="../assets/auth-crowd.png" alt="" />
+      <div class="auth__scrim"></div>
+      <a class="brand auth__brand" href="../"><img src="../assets/audio-lines-light.svg" width="26" height="26" alt="" /><span class="brand__name brand__name--light">JUNG PA!</span></a>
+      <div class="auth__invite">
+        <p class="eyebrow eyebrow--mint">YOU BELONG IN THE CROWD.</p>
+        <p class="display auth__quote">Life sounds better<br />when you’re here.</p>
+        <p class="auth__lead">Your favourite artists, unforgettable nights and a ticket to something extraordinary.</p>
+        <span class="badge badge--fast">★&nbsp; 4.9/5 from 12,000+ music lovers</span>
+      </div>
+    </aside>
+
+    <main class="auth__work auth__work--tight">
+      <a class="auth__back" href="../">← Back to discover</a>
+
+      <form class="auth__form auth__form--tight" id="register-form" novalidate>
+        <div class="auth__intro">
+          <p class="eyebrow eyebrow--purple">MAKE ROOM FOR MORE LIVE</p>
+          <h1 class="display auth__title">Join the crowd.</h1>
+          <p class="auth__sub">Your all-access account for unforgettable nights, favourite artists and tickets in one place.</p>
+        </div>
+
+        <button type="button" class="btn btn--outline auth__wide" data-unavailable="Google sign-up">G&nbsp; Sign up with Google</button>
+        <div class="auth__or"><span>or with email</span></div>
+
+        <div class="frow">
+          <label class="fld"><span>First name</span><input class="finput" id="first-name" autocomplete="given-name" maxlength="100" required /></label>
+          <label class="fld"><span>Last name</span><input class="finput" id="last-name" autocomplete="family-name" maxlength="100" /></label>
+        </div>
+        <label class="fld">
+          <span>Email address</span>
+          <span class="finput-wrap"><input class="finput" id="email" type="email" autocomplete="email" required /><img src="../assets/mail.svg" width="17" height="17" alt="" /></span>
+        </label>
+        <label class="fld">
+          <span>Password</span>
+          <span class="finput-wrap">
+            <input class="finput" id="password" type="password" autocomplete="new-password" maxlength="100" required aria-describedby="strength-text" />
+            <button type="button" class="eye" aria-label="Show password" aria-pressed="false" data-eye="password"><img src="../assets/eye-off.svg" width="17" height="17" alt="" /></button>
+          </span>
+        </label>
+        <div class="strength" id="strength" data-level="0">
+          <div class="strength__bar" aria-hidden="true"><i></i><i></i><i></i><i></i></div>
+          <p class="strength__text" id="strength-text" aria-live="polite">Use 8+ characters with a number. Add a symbol to make it strong.</p>
+        </div>
+
+        <label class="check check--top"><input type="checkbox" id="news" /> Keep me in the loop with concert announcements, presales and recommendations. (Optional)</label>
+        <p class="auth__fine">By creating an account, you agree to ENCORE’s Terms &amp; Conditions and acknowledge our Privacy Policy.</p>
+
+        <p class="auth__error" id="form-error" role="alert" hidden></p>
+        <button type="submit" class="btn btn--primary auth__wide" id="submit-btn">Create my account <img src="../assets/arrow-right-white.svg" width="16" height="16" alt="" /></button>
+        <p class="auth__switch">Already have an account? <a id="switch-link" href="../login/login.html">Log in →</a></p>
+      </form>
+
+      <footer class="auth__foot">
+        <p>© 2026 ENCORE &nbsp;·&nbsp; <a href="#privacy">Privacy</a> &nbsp;·&nbsp; <a href="#terms">Terms</a> &nbsp;·&nbsp; <a href="#help">Help</a></p>
+      </footer>
+    </main>
+  </div>
+
+  <script src="../session.js"></script>
+  <script src="../login/auth.js"></script>
+</body>
+</html>

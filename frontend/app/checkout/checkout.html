@@ -1,0 +1,190 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Checkout — ENCORE</title>
+  <meta name="description" content="Complete your booking before your seat hold runs out." />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Bodoni+Moda:opsz,wght@6..96,400;6..96,500&family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="../theme.css" /><!-- global theme + nav/footer -->
+  <link rel="stylesheet" href="../seats/seats.css" /><!-- shared booking pieces: step indicator, panels, order summary -->
+  <link rel="stylesheet" href="checkout.css" /><!-- checkout form layout only -->
+</head>
+<body>
+  <!-- checkout uses a quiet header: brand + "Secure checkout", no menu to leave by accident -->
+  <header class="nav">
+    <div class="container nav__inner">
+      <a class="brand" href="../" aria-label="Home">
+        <img src="../assets/audio-lines.svg" width="26" height="26" alt="" />
+        <span class="brand__name">JUNG PA!</span>
+      </a>
+      <span class="nav__secure"><img src="../assets/lock.svg" width="17" height="17" alt="" />Secure checkout</span>
+    </div>
+  </header>
+
+  <main class="container booking booking--narrow" id="booking" aria-busy="true">
+    <ol class="steps" aria-label="Booking progress">
+      <li class="steps__item is-done" id="step-1"><span>✓</span>Choose seats</li>
+      <li class="steps__item is-current" id="step-2" aria-current="step"><span>2</span>Checkout</li>
+      <li class="steps__item" id="step-3"><span>3</span>Your tickets</li>
+    </ol>
+
+    <div class="booking__head">
+      <div>
+        <h1 class="booking__title" id="page-title">You’re one step from the crowd.</h1>
+        <p class="booking__meta" id="page-lead">Your seats are held while you complete your booking.</p>
+      </div>
+      <span class="badge badge--fast" id="hold-badge" role="timer" aria-live="off">Seats held for --:--</span>
+    </div>
+
+    <!-- error / expired state -->
+    <section class="panel bstate" id="checkout-state" hidden>
+      <h2 class="h-28" id="state-title">We couldn’t find that order.</h2>
+      <p class="muted-14" id="state-text">The link may be old.</p>
+      <div class="bstate__actions">
+        <a class="btn btn--primary" id="state-cta" href="../#concerts">Browse concerts</a>
+        <button type="button" class="btn btn--outline" id="retry-btn" hidden>Try again</button>
+      </div>
+    </section>
+
+    <!-- confirmation (step 3) shown after a successful payment -->
+    <section class="panel done" id="done" hidden aria-labelledby="done-title">
+      <p class="eyebrow eyebrow--purple">BOOKING CONFIRMED</p>
+      <h2 class="h-28" id="done-title">See you in the crowd!</h2>
+      <p class="muted-14" id="done-text"></p>
+      <ul class="done__tickets" id="done-tickets"></ul>
+      <div class="bstate__actions">
+        <a class="btn btn--primary" href="../#concerts">Find another night</a>
+        <button type="button" class="btn btn--outline" id="print-btn">Print tickets</button>
+      </div>
+    </section>
+
+    <div class="workspace" id="workspace">
+      <!-- ================= Checkout form ================= -->
+      <form class="workspace__main payform" id="pay-form" novalidate>
+        <a class="account-hint" href="#login">
+          <img src="../assets/user-round.svg" width="20" height="20" alt="" />
+          <span>Already part of ENCORE? Log in for a faster checkout →</span>
+        </a>
+
+        <fieldset class="panel fset">
+          <legend class="fset__title">01&nbsp; Your details</legend>
+          <div class="frow">
+            <label class="fld"><span>First name</span><input class="finput" id="first-name" name="first_name" autocomplete="given-name" required /></label>
+            <label class="fld"><span>Last name</span><input class="finput" id="last-name" name="last_name" autocomplete="family-name" required /></label>
+          </div>
+          <label class="fld">
+            <span>Email address</span>
+            <span class="finput-wrap"><input class="finput" id="email" name="email" type="email" autocomplete="email" required /><img src="../assets/mail.svg" width="17" height="17" alt="" /></span>
+          </label>
+          <p class="fhint">Your confirmation and mobile tickets will be sent to this address.</p>
+        </fieldset>
+
+        <fieldset class="panel fset">
+          <legend class="fset__title fset__title--row">02&nbsp; Payment method <img src="../assets/lock-purple.svg" width="18" height="18" alt="" /></legend>
+          <!-- values are the providers the payments API accepts -->
+          <div class="methods" role="radiogroup" aria-label="Payment method">
+            <label class="method"><input type="radio" name="provider" value="credit_card" checked /><span>Credit / debit card</span></label>
+            <label class="method"><input type="radio" name="provider" value="promptpay" /><span>PromptPay</span></label>
+            <label class="method"><input type="radio" name="provider" value="bank_transfer" /><span>Bank transfer</span></label>
+          </div>
+
+          <div class="method-panel" data-for="credit_card">
+            <p class="testmode">Test mode: no real charge. Use <b>4242 4242 4242 4242</b>, any future expiry and any 3 digits. Card details are only checked in your browser and are never sent or stored.</p>
+            <label class="fld"><span>Name on card</span><input class="finput" id="card-name" autocomplete="off" /></label>
+            <label class="fld">
+              <span>Card number</span>
+              <span class="finput-wrap"><input class="finput" id="card-number" inputmode="numeric" autocomplete="off" placeholder="1234  5678  9012  3456" maxlength="23" /><img src="../assets/credit-card.svg" width="17" height="17" alt="" /></span>
+            </label>
+            <div class="frow">
+              <label class="fld"><span>Expiry date</span><input class="finput" id="card-exp" inputmode="numeric" autocomplete="off" placeholder="MM / YY" maxlength="7" /></label>
+              <label class="fld">
+                <span>Security code</span>
+                <span class="finput-wrap"><input class="finput" id="card-cvc" inputmode="numeric" autocomplete="off" placeholder="•••" maxlength="4" /><img src="../assets/circle-help.svg" width="17" height="17" alt="" title="The 3 digits on the back of your card" /></span>
+              </label>
+            </div>
+            <p class="fhint fhint--sm">VISA &nbsp;·&nbsp; Mastercard &nbsp;·&nbsp; American Express &nbsp;&nbsp;/&nbsp;&nbsp; Encrypted and securely processed</p>
+          </div>
+          <div class="method-panel" data-for="promptpay" hidden>
+            <p class="testmode">Test mode: pressing Pay simulates a successful PromptPay scan. In production a QR code would appear here.</p>
+          </div>
+          <div class="method-panel" data-for="bank_transfer" hidden>
+            <p class="testmode">Test mode: pressing Pay simulates a confirmed bank transfer.</p>
+          </div>
+        </fieldset>
+
+        <fieldset class="panel fset">
+          <legend class="fset__title">03&nbsp; Billing address</legend>
+          <div class="frow">
+            <label class="fld">
+              <span>Country</span>
+              <span class="finput-wrap">
+                <select class="finput" id="country" autocomplete="country-name">
+                  <option>Thailand</option><option>Japan</option><option>Singapore</option><option>Malaysia</option>
+                  <option>United Kingdom</option><option>United States</option><option>Other</option>
+                </select>
+                <img src="../assets/chevron-down.svg" width="17" height="17" alt="" />
+              </span>
+            </label>
+            <label class="fld"><span>Postcode</span><input class="finput" id="postcode" autocomplete="postal-code" /></label>
+          </div>
+          <label class="check"><input type="checkbox" id="remember" checked /> Save my details on this device for my next live moment.</label>
+        </fieldset>
+
+        <p class="fhint" id="terms">By selecting “Pay”, you agree to our Terms &amp; Conditions and the venue’s entry policy. Tickets are non-refundable unless the event is cancelled.</p>
+        <p class="summary__error" id="pay-error" role="alert" hidden></p>
+        <button type="submit" class="btn btn--primary payform__cta" id="pay-btn" disabled>
+          <span id="pay-label">Pay</span> <img src="../assets/lock-white.svg" width="16" height="16" alt="" />
+        </button>
+        <p class="payform__safe">Secure payment · Instant confirmation · Official mobile tickets</p>
+      </form>
+
+      <!-- ================= Booking summary ================= -->
+      <div class="sidecol">
+        <aside class="panel summary summary--static" aria-labelledby="summary-title">
+          <div class="summary__head">
+            <h2 id="summary-title">Your night, reserved</h2>
+            <span class="badge badge--plum" id="ticket-count">… tickets</span>
+          </div>
+          <img class="summary__photo" src="../assets/seats-photo.png" alt="" />
+          <div class="summary__event">
+            <p class="summary__name" id="sum-name">…</p>
+            <p class="summary__when" id="sum-when"></p>
+            <p class="summary__when" id="sum-where"></p>
+          </div>
+          <ul class="summary__seats" id="sum-seats"></ul>
+          <hr class="summary__rule" />
+          <div class="line"><span id="sum-tickets-label">Tickets</span><span id="sum-tickets">—</span></div>
+          <div class="line"><span>Mobile ticket delivery</span><span>Free</span></div>
+          <div class="line line--total"><span>Total to pay</span><strong id="sum-total">—</strong></div>
+          <p class="summary__note">All prices in THB. Order <span id="order-number">…</span></p>
+          <p class="summary__safe"><img src="../assets/shield-check.svg" width="16" height="16" alt="" />Official tickets. Secure from seat to stage.</p>
+        </aside>
+
+        <form class="panel promo" id="promo-form">
+          <label for="promo" class="promo__title">Have a promo code?</label>
+          <div class="promo__row">
+            <input class="finput" id="promo" placeholder="Enter code" autocomplete="off" />
+            <button type="submit" class="btn btn--outline">Apply</button>
+          </div>
+          <p class="fhint" id="promo-msg" hidden></p>
+        </form>
+      </div>
+    </div>
+  </main>
+
+  <footer class="footer footer--slim">
+    <div class="container">
+      <div class="footer__legal">
+        <span>© 2026 ENCORE. Made for the live moment.</span>
+        <span class="footer__legal-links"><a href="#privacy">Privacy policy</a><a href="#terms">Terms of use</a><a href="#cookies">Cookies</a></span>
+      </div>
+    </div>
+  </footer>
+
+  <script src="../session.js"></script><!-- logged-in user + nav button (shared) -->
+  <script src="checkout.js"></script>
+</body>
+</html>

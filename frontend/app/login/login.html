@@ -1,0 +1,75 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Log in — ENCORE</title>
+  <meta name="description" content="Log in to find your tickets and book your next live moment." />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Bodoni+Moda:opsz,wght@6..96,400;6..96,500&family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="../theme.css" />
+  <link rel="stylesheet" href="auth.css" /><!-- shared by login.html and register.html -->
+</head>
+<body class="auth-page">
+  <div class="auth">
+    <!-- ================= Live music invitation ================= -->
+    <aside class="auth__art" aria-hidden="true">
+      <img class="auth__photo" src="../assets/auth-crowd.png" alt="" />
+      <div class="auth__scrim"></div>
+      <a class="brand auth__brand" href="../"><img src="../assets/audio-lines-light.svg" width="26" height="26" alt="" /><span class="brand__name brand__name--light">JUNG PA!</span></a>
+      <div class="auth__invite">
+        <p class="eyebrow eyebrow--mint">YOU BELONG IN THE CROWD.</p>
+        <p class="display auth__quote">Life sounds better<br />when you’re here.</p>
+        <p class="auth__lead">Your favourite artists, unforgettable nights and a ticket to something extraordinary.</p>
+        <span class="badge badge--fast">★&nbsp; 4.9/5 from 12,000+ music lovers</span>
+      </div>
+    </aside>
+
+    <!-- ================= Login form ================= -->
+    <main class="auth__work">
+      <a class="auth__back" href="../">← Back to discover</a>
+
+      <form class="auth__form" id="login-form" novalidate>
+        <div class="auth__intro">
+          <p class="eyebrow eyebrow--purple">YOUR NEXT ENCORE AWAITS</p>
+          <h1 class="display auth__title">Welcome back.</h1>
+          <p class="auth__sub" id="login-sub">Log in to find your tickets, follow your favourite artists and get back to the good nights.</p>
+        </div>
+
+        <button type="button" class="btn btn--outline auth__wide" data-unavailable="Google sign-in">G&nbsp; Continue with Google</button>
+        <div class="auth__or"><span>or with email</span></div>
+
+        <label class="fld">
+          <span>Email address</span>
+          <span class="finput-wrap"><input class="finput" id="email" type="email" autocomplete="email" required /><img src="../assets/mail.svg" width="17" height="17" alt="" /></span>
+        </label>
+        <label class="fld">
+          <span>Password</span>
+          <span class="finput-wrap">
+            <input class="finput" id="password" type="password" autocomplete="current-password" required />
+            <button type="button" class="eye" aria-label="Show password" aria-pressed="false" data-eye="password"><img src="../assets/eye-off.svg" width="17" height="17" alt="" /></button>
+          </span>
+        </label>
+
+        <div class="auth__row">
+          <label class="check"><input type="checkbox" id="remember" checked /> Keep me logged in</label>
+          <button type="button" class="auth__link" data-unavailable="Password reset">Forgot password?</button>
+        </div>
+
+        <p class="auth__error" id="form-error" role="alert" hidden></p>
+        <button type="submit" class="btn btn--primary auth__wide" id="submit-btn">Log in <img src="../assets/arrow-right-white.svg" width="16" height="16" alt="" /></button>
+        <p class="auth__switch">New to the crowd? <a id="switch-link" href="../register/register.html">Create an account →</a></p>
+      </form>
+
+      <footer class="auth__foot">
+        <p>Protected with secure encryption. Your details stay yours.</p>
+        <p>© 2026 ENCORE &nbsp;·&nbsp; <a href="#privacy">Privacy</a> &nbsp;·&nbsp; <a href="#terms">Terms</a> &nbsp;·&nbsp; <a href="#help">Help</a></p>
+      </footer>
+    </main>
+  </div>
+
+  <script src="../session.js"></script>
+  <script src="auth.js"></script>
+</body>
+</html>
