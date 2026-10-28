@@ -1,0 +1,91 @@
+/* =====================================================================
+   ENCORE checkout & payment (checkout.html) layout only.
+   Step indicator, panels and the order summary come from seats.css;
+   colours, fonts and buttons from theme.css.
+   Measurements follow the Figma frame "ENCORE — Checkout & payment" (6:26099).
+   ===================================================================== */
+
+.nav__secure { display: inline-flex; align-items: center; gap: 24px; font-size: 12px; white-space: nowrap; }
+.booking--narrow { max-width: calc(1152px + 2 * var(--gutter)); }   /* Figma: 144px side padding at 1440 */
+.workspace { gap: 32px; }
+
+/* ---------- form ---------- */
+.payform { gap: 20px; }
+.account-hint { display: flex; align-items: center; gap: 12px; padding: 16px; border-radius: var(--radius); background: var(--green-bg); font-size: 12px; }
+.account-hint:hover span { text-decoration: underline; }
+
+.fset { display: flex; flex-direction: column; gap: 20px; margin: 0; min-width: 0; }
+.fset__title { float: left; width: 100%; padding: 0; font-size: 20px; font-weight: 600; line-height: 1.12; }   /* float keeps the legend inside the padded panel */
+.fset__title + * { clear: both; }
+.fset__title--row { display: flex; justify-content: space-between; align-items: center; }
+
+.frow { display: flex; gap: 16px; }
+.frow > .fld { flex: 1; min-width: 0; }
+.fld { display: flex; flex-direction: column; gap: 8px; }
+.fld > span:first-child { font-size: 12px; font-weight: 600; }
+.finput {
+  width: 100%; height: 48px; padding: 0 14px; border: 1px solid var(--line); border-radius: var(--radius);
+  background: var(--white); font-size: 13px; outline: 0;
+}
+.finput::placeholder { color: var(--muted); }
+.finput:focus { border-color: var(--plum-700); }
+.finput[aria-invalid="true"] { border-color: var(--red-fg); background: var(--red-bg); }
+select.finput { appearance: none; -webkit-appearance: none; cursor: pointer; }
+.finput-wrap { position: relative; display: block; }
+.finput-wrap .finput { padding-right: 42px; }
+.finput-wrap img { position: absolute; right: 14px; top: 50%; transform: translateY(-50%); pointer-events: none; }
+.finput-wrap img[title] { pointer-events: auto; cursor: help; }
+.fhint { font-size: 11px; color: var(--muted); }
+.fhint--sm { font-size: 10px; }
+.fhint.is-error { color: var(--red-fg); }
+
+.methods { display: flex; gap: 12px; }
+.method { flex: 1; position: relative; }
+.method input { position: absolute; opacity: 0; }
+.method span {
+  display: flex; align-items: center; justify-content: center; gap: 8px; height: 48px; padding: 0 8px;
+  border: 1px solid var(--line); border-radius: var(--radius); background: var(--white);
+  color: var(--plum-700); font-size: 12px; font-weight: 600; text-align: center; cursor: pointer;
+}
+.method input:checked + span { background: var(--mist); border-color: var(--plum-700); }
+.method input:checked + span::before { content: "●"; font-size: 9px; }
+.method input:focus-visible + span { outline: 2px solid var(--plum-700); outline-offset: 2px; }
+.method-panel { display: flex; flex-direction: column; gap: 20px; }
+.testmode { padding: 10px 12px; border-radius: var(--radius); background: var(--amber-bg); color: var(--amber-fg); font-size: 11px; }
+
+.check { display: flex; align-items: center; gap: 8px; font-size: 11px; color: var(--muted); cursor: pointer; }
+.check input { width: 14px; height: 14px; margin: 0; accent-color: var(--plum-700); }
+
+.payform__cta { width: 100%; }
+.payform__cta:disabled { opacity: .5; cursor: not-allowed; }
+.payform__cta[aria-busy="true"] { cursor: progress; }
+.payform__safe { font-size: 11px; color: var(--green-fg); text-align: center; }
+
+/* ---------- side column ---------- */
+.sidecol { flex: 0 0 360px; display: flex; flex-direction: column; gap: 20px; position: sticky; top: 108px; }
+.summary--static { position: static; flex: none; }
+.promo { display: flex; flex-direction: column; gap: 20px; }
+.promo__title { font-size: 13px; font-weight: 600; }
+.promo__row { display: flex; gap: 8px; }
+.promo__row .finput { height: 46px; font-size: 12px; }
+
+/* ---------- confirmation ---------- */
+.done { display: flex; flex-direction: column; gap: 12px; }
+.done__tickets { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 12px; margin-top: 12px; }
+.ticket { display: flex; flex-direction: column; gap: 4px; padding: 16px; border: 1px dashed var(--plum-700); border-radius: var(--radius); background: var(--mist); }
+.ticket b { font-size: 13px; }
+.ticket small { font-size: 11px; color: var(--muted); }
+.ticket code { font-size: 12px; font-weight: 700; color: var(--plum-700); letter-spacing: .04em; overflow-wrap: anywhere; }
+
+/* ---------- responsive ---------- */
+@media (max-width: 1200px) { .sidecol { flex-basis: 320px; } }
+@media (max-width: 900px) {
+  .sidecol { position: static; flex-basis: auto; order: -1; }   /* summary above the form on small screens */
+}
+@media (max-width: 600px) {
+  .frow, .methods { flex-direction: column; gap: 12px; }
+}
+@media print {   /* "Print tickets" prints only the confirmation */
+  .nav, .footer, .steps, .booking__head, .workspace, .bstate__actions { display: none !important; }
+  .done { border: 0; padding: 0; }
+}

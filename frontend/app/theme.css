@@ -95,6 +95,9 @@ ul {
   outline: 2px solid var(--plum-700);
   outline-offset: 2px;
 }
+[hidden] {
+  display: none !important; /* keep the hidden attribute working on elements a page styles as flex/grid */
+}
 .sr-only {
   position: absolute;
   width: 1px;
@@ -398,6 +401,131 @@ ul {
 .toast.is-visible {
   opacity: 1;
   transform: translate(-50%, 0);
+}
+
+/* ---------- 11. site chrome: navigation bar and footer (moved from home.css so every page shares them) ---------- */
+.nav {
+  position: sticky;
+  top: 0;
+  z-index: 20;
+  background: var(--white);
+  border-bottom: 1px solid var(--line);
+}
+.nav__inner {
+  height: 88px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 24px;
+}
+.nav__links {
+  display: flex;
+  gap: 32px;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--muted);
+}
+.nav__links a:hover,
+.nav__links a.is-active {
+  color: var(--plum-700);
+}
+.nav__links a.is-active {
+  font-weight: 700;
+}
+.nav__actions {
+  display: flex;
+  align-items: center;
+  gap: 24px;
+}
+.nav__location {
+  display: inline-flex;
+  align-items: center;
+  gap: 24px;
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.footer {
+  background: var(--plum-900);
+  color: var(--lilac);
+  padding: 48px 0;
+}
+.footer .container {
+  display: flex;
+  flex-direction: column;
+  gap: 32px;
+}
+.footer__top {
+  display: flex;
+  justify-content: space-between;
+  gap: 32px;
+}
+.footer__brand {
+  width: 340px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  font-size: 14px;
+}
+.footer__col {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  font-size: 12px;
+}
+.footer__col h3 {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--white);
+}
+.footer a:hover {
+  color: var(--white);
+}
+.footer__legal {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+  font-size: 11px;
+}
+.footer__legal-links {
+  display: flex;
+  gap: 20px;
+}
+
+.nav__hello {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--plum-700);
+  white-space: nowrap; /* "Hi, Tanya" added by session.js when a fan is logged in */
+}
+.footer--slim {
+  padding: 24px 0; /* detail pages: only the legal line, as in the Figma concert-details frame */
+}
+@media (max-width: 900px) {
+  .nav__links,
+  .nav__location {
+    display: none;
+  }
+  .footer__top {
+    flex-wrap: wrap;
+  }
+  .footer__brand {
+    width: 100%;
+  }
+}
+@media (max-width: 600px) {
+  .nav__inner {
+    height: 68px;
+  }
+  .brand__name {
+    font-size: 20px;
+  }
+  .nav .btn {
+    height: 40px;
+    padding: 0 14px;
+    font-size: 12px;
+  }
 }
 
 /* ---------- 10. responsive tokens ---------- */

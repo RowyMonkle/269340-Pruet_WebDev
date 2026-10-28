@@ -1,0 +1,98 @@
+/* =====================================================================
+   ENCORE log in + registration (login.html, register.html) layout only.
+   Colours, fonts, buttons and badges live in theme.css.
+   Figma frames "ENCORE — Log in" (6:26249) and "ENCORE — Registration" (6:26298).
+   ===================================================================== */
+
+.auth { display: flex; min-height: 100vh; }
+
+/* ---------- left: photo + invitation ---------- */
+.auth__art {
+  position: relative; flex: 0 0 47.2%;   /* 680 / 1440 */
+  display: flex; flex-direction: column; justify-content: space-between; gap: 32px;
+  min-height: 100vh; padding: 56px; overflow: hidden; background: var(--plum-900); color: var(--white);
+}
+.auth__photo { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
+.auth__scrim { position: absolute; inset: 0; background: linear-gradient(180deg, rgba(36, 24, 45, .38) 0%, rgba(36, 24, 45, 0) 40%, rgba(36, 24, 45, .95) 100%); }
+.auth__brand, .auth__invite { position: relative; }
+.auth__invite { display: flex; flex-direction: column; align-items: flex-start; gap: 24px; max-width: 568px; padding-bottom: 16px; }
+.auth__quote { font-size: 68px; line-height: 1.03; }
+.auth__lead { font-size: 15px; color: var(--lilac); }
+
+/* ---------- right: form ---------- */
+.auth__work { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 72px; padding: 48px clamp(24px, 7.6vw, 110px); }
+.auth__work--tight { gap: 32px; }
+.auth__back { font-size: 12px; color: var(--plum-700); align-self: flex-start; }
+.auth__back:hover { text-decoration: underline; }
+.auth__form { display: flex; flex-direction: column; gap: 28px; padding-top: 24px; max-width: 560px; width: 100%; }
+.auth__form--tight { gap: 20px; padding-top: 0; }
+.auth__intro { display: flex; flex-direction: column; gap: 14px; }
+.auth__title { font-size: 52px; }
+.auth__sub { font-size: 14px; color: var(--muted); }
+.auth__wide { width: 100%; }
+.auth__wide:disabled { opacity: .6; cursor: progress; }
+.auth__or { display: flex; align-items: center; gap: 16px; font-size: 11px; color: var(--muted); }
+.auth__or::before, .auth__or::after { content: ""; flex: 1; border-top: 1px solid var(--line); }
+.auth__row { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+.auth__link { padding: 0; border: 0; background: none; color: var(--plum-700); font-size: 12px; font-weight: 600; cursor: pointer; }
+.auth__link:hover { text-decoration: underline; }
+.auth__switch { font-size: 13px; text-align: center; }
+.auth__switch a { color: var(--plum-700); font-weight: 600; }
+.auth__switch a:hover { text-decoration: underline; }
+.auth__fine { font-size: 11px; color: var(--muted); }
+.auth__error { font-size: 12px; color: var(--red-fg); background: var(--red-bg); padding: 10px 12px; border-radius: var(--radius); }
+.auth__error a { font-weight: 600; text-decoration: underline; }
+.auth__notice { font-size: 12px; color: var(--green-fg); background: var(--green-bg); padding: 10px 12px; border-radius: var(--radius); }
+.auth__foot { display: flex; flex-direction: column; gap: 12px; font-size: 10px; color: var(--muted); text-align: center; max-width: 560px; width: 100%; margin-top: auto; }
+.auth__foot a:hover { color: var(--plum-700); }
+
+/* form fields (same look as checkout) */
+.frow { display: flex; gap: 16px; }
+.frow > .fld { flex: 1; min-width: 0; }
+.fld { display: flex; flex-direction: column; gap: 8px; }
+.fld > span:first-child { font-size: 12px; font-weight: 600; }
+.finput { width: 100%; height: 48px; padding: 0 14px; border: 1px solid var(--line); border-radius: var(--radius); background: var(--white); font-size: 13px; outline: 0; }
+.finput:focus { border-color: var(--plum-700); }
+.finput[aria-invalid="true"] { border-color: var(--red-fg); background: var(--red-bg); }
+.finput-wrap { position: relative; display: block; }
+.finput-wrap .finput { padding-right: 44px; }
+.finput-wrap > img { position: absolute; right: 14px; top: 50%; transform: translateY(-50%); pointer-events: none; }
+.eye { position: absolute; right: 8px; top: 50%; transform: translateY(-50%); display: grid; place-items: center; width: 30px; height: 30px; padding: 0; border: 0; border-radius: var(--radius-sm); background: none; cursor: pointer; }
+.eye[aria-pressed="true"] { background: var(--mist); }
+.check { display: flex; align-items: center; gap: 8px; font-size: 12px; cursor: pointer; }
+.check input { width: 16px; height: 16px; margin: 0; flex: none; accent-color: var(--plum-700); }
+.check--top { align-items: flex-start; gap: 10px; font-size: 11px; color: var(--muted); }
+.check--top input { margin-top: 1px; }
+
+/* password strength */
+.strength { display: flex; flex-direction: column; gap: 8px; margin-top: -8px; }
+.strength__bar { display: flex; gap: 5px; }
+.strength__bar i { flex: 1; height: 3px; border-radius: 2px; background: var(--line); transition: background-color .2s; }
+.strength__text { font-size: 10px; color: var(--muted); }
+.strength[data-level="1"] i:nth-child(-n+1) { background: var(--red-fg); }
+.strength[data-level="2"] i:nth-child(-n+2) { background: var(--amber-fg); }
+.strength[data-level="3"] i:nth-child(-n+3),
+.strength[data-level="4"] i { background: var(--green-fg); }
+.strength[data-level="1"] .strength__text { color: var(--red-fg); }
+.strength[data-level="2"] .strength__text { color: var(--amber-fg); }
+.strength[data-level="3"] .strength__text,
+.strength[data-level="4"] .strength__text { color: var(--green-fg); }
+
+/* ---------- responsive ---------- */
+@media (max-width: 1200px) {
+  .auth__art { flex-basis: 42%; padding: 40px; }
+  .auth__quote { font-size: 52px; }
+}
+@media (max-width: 900px) {
+  .auth { flex-direction: column; }
+  .auth__art { flex: none; min-height: 300px; padding: 24px var(--gutter); }
+  .auth__invite { gap: 12px; padding-bottom: 0; }
+  .auth__quote { font-size: 36px; }
+  .auth__lead, .auth__invite .badge { display: none; }
+  .auth__work { gap: 32px; padding: 32px var(--gutter) 40px; }
+  .auth__form { padding-top: 0; }
+}
+@media (max-width: 600px) {
+  .auth__title { font-size: 40px; }
+  .frow { flex-direction: column; gap: 20px; }
+}
