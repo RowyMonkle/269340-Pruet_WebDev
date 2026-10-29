@@ -327,7 +327,7 @@ has an owner in 7.6.
 | 35 | Concurrency control (optimistic **or** pessimistic) proven by `test_concurrency.py` | Natthakritta | **Done.** Pessimistic locking + atomic seat counters, `test_concurrency.py` (22 tests), a limit on every wait (7.2, 7.3, 7.9) |
 | 35 | Query projection and zero N+1 on list endpoints | Nannapat (endpoints), Natthakritta (index, DB statistics) | **Done.** Order list as a paginated summary (`GET /orders/summary`, the original `GET /orders?user_id=` redirects to it), `EventSummary` for events, projected users; round trips constant while the data grows 50-300 times, `tests/test_query_counts.py` (20 tests, 7.10) |
 | 20 | Load test: >= 50 VUs, 3 min, p95 < 200 ms, p99 < 500 ms, errors < 1 % | Poonyaporn | **Done.** `scripts/k6_script.js`: 50 VUs, 3 min, real writes; 216.1 req/s, p95 60.04 ms, p99 104.07 ms, 0 % failed (7.13) |
-| 10 | `Performance_Audit_Report.pdf` (or a README section) + defence | Pandara (report), everyone (defence) | Report **written** with charts: `docs/Performance_Audit_Report.md` and the summary in 7.13 (the spec accepts a README section). Open: PDF export if the team wants one, the defence script |
+| 10 | `Performance_Audit_Report.pdf` (or a README section) + defence | Pandara (report), everyone (defence) | **Done.** `Performance_Audit_Report.pdf` (repository root) is generated from `docs/Performance_Audit_Report.md` (four charts, all metrics) and the summary is in 7.13; the defence material is `docs/defence_qa.md` |
 
 Team decisions (2026-10-13): **Option B (pessimistic)** is our concurrency answer, Option A (version column / 412) is not built.
 Load tool: **k6** for the official benchmark (`scripts/k6_script.js`), **Locust** (`docs/perf/reference_locustfile.py`) as the independent cross-check. `pg_stat_statements` is enabled for database-side evidence.
@@ -533,11 +533,10 @@ Status 2026-10-25: **Done** items are merged and covered by tests or by the load
 *Done when:* a 3-minute run passes all thresholds on a clean stack and the report, summary and charts are in `docs/` and `docs/perf/` (met, 7.13); items 3, 4 and 6 are extras.
 
 **Pandara — System Documentation & Frontend Design**
-1. **Done (Markdown).** `docs/Performance_Audit_Report.md`: objectives and rubric mapping; concurrency control (table 7.2 and the test results); query audit table (endpoint, SQL statements, payload); load test setup, results and four charts; consistency audit output; risks; how to reproduce. **Open:** export it to **`Performance_Audit_Report.pdf`** at the repository root (the file name the spec asks for). The spec also accepts a README section, which is 7.13, so the PDF is optional; if it is made, every number must match 7.13.
+1. **Done (Markdown and PDF).** `docs/Performance_Audit_Report.md`, exported to **`Performance_Audit_Report.pdf`** at the repository root (the file name the spec asks for): objectives and rubric mapping; concurrency control (table 7.2 and the test results); query audit table (endpoint, SQL statements, payload); load test setup, results and four charts; consistency audit output; risks; how to reproduce. The PDF is generated from the Markdown with `docker run --rm -v "$PWD:/repo" python:3.11-slim python /repo/docs/perf/make_report_pdf.py`: run it again after every change of the report, so that the PDF, the Markdown and README 7.13 show the same figures.
 2. **Open (ongoing).** Keep README section 7 current (status columns, numbers) and fix any command that no longer works.
-3. **Open.** Rewrite `docs/audit_demo_script.md` for the CP3 defence: live race demo (7.3), query-count demo, load run, and who answers which question.
-   Known bugs to fix there: step 2.2 reads `jq '.[0]._id'` from `/events?limit=1`, but the endpoint answers `{"items": [{"id": ...}]}` and the parameter is `page_size`; paying twice now answers `409`, not `400`.
-4. **Open.** Packaging: `git archive -o 269340_CP3.zip HEAD` contains tracked files only (no `__pycache__`, `.env`, local notes; the CP2 zip held 80 junk entries out of 159). The spec does not say how or where to submit: ask the instructor.
+3. **Done.** The known bugs of `docs/audit_demo_script.md` are fixed (step 2.2 uses `page_size` and `.items[0].id`; paying twice answers `409`); the defence questions and the live-demo runbook are in `docs/defence_qa.md`.
+4. **Done (zip), open (channel).** Packaging: `git archive --format=zip --prefix=CP3_Concurrency_Control_and_Performance_Audit/ -o CP3_Concurrency_Control_and_Performance_Audit.zip HEAD` builds `CP3_Concurrency_Control_and_Performance_Audit.zip` from tracked files only (no `__pycache__`, `.env`, local notes, raw k6 points; the CP2 zip held 80 junk entries out of 159) inside one folder of the same name, and it contains `Performance_Audit_Report.pdf` and `SUBMISSION_INDEX.md`. The spec does not say how or where to submit: ask the instructor.
 5. **Open.** Frontend: pair with Nannapat on the booking demo page.
 *Done when:* every number in the report can be reproduced with a command from this README.
 
@@ -750,7 +749,7 @@ docker compose exec -e REQUIRE_DB=1 api pytest tests/test_index_report.py tests/
 
 ### 7.13 Performance Audit Report: the load test with real writes (CP3 deliverable)
 
-The full report is [`docs/Performance_Audit_Report.md`](docs/Performance_Audit_Report.md) (objectives, mechanism, query audit, methodology, raw k6 output, consistency audit, risks, how to reproduce). The load test is `scripts/k6_script.js`: **50 VUs for 3 minutes**, 65 % read / 35 % write iterations, and **every write really succeeds** (the script creates its own events, pays the order it has just created, and counts only the expected status as a success).
+The full report is [`Performance_Audit_Report.pdf`](Performance_Audit_Report.pdf), generated from [`docs/Performance_Audit_Report.md`](docs/Performance_Audit_Report.md) (objectives, mechanism, query audit, methodology, raw k6 output, consistency audit, risks, how to reproduce). The load test is `scripts/k6_script.js`: **50 VUs for 3 minutes**, 65 % read / 35 % write iterations, and **every write really succeeds** (the script creates its own events, pays the order it has just created, and counts only the expected status as a success).
 
 | CP3 requirement | Result (run 3 of 3) | Status |
 | --- | --- | --- |
@@ -768,11 +767,11 @@ Three consecutive runs agree within 1 % on throughput and within 4 ms on p95 (21
 ![Throughput and virtual users](docs/perf/k6_throughput.png)
 ![Latency over time against the CP3 limits](docs/perf/k6_latency.png)
 
-More charts (latency per endpoint, outcome of every request) are in the report. Reproduce:
+More charts (latency per endpoint, outcome of every request) are in the report, whose section 10 lists every file behind these numbers: the k6 summary (`docs/k6_summary.json`), the per-endpoint statistics (`docs/perf/k6_stats.json`), the four charts (`docs/perf/k6_*.png`) and the captured output of the graded tests (`docs/perf/test_results.txt`). Reproduce:
 
 ```bash
-docker run --rm --network 269340-pruet_ticweb_default -v "$PWD/scripts:/scripts:ro" -v "$PWD/docs:/out" \
-  -e BASE_URL=http://nginx/api/v1 grafana/k6 run /scripts/k6_script.js \
+docker run --rm --add-host=host.docker.internal:host-gateway -v "$PWD/scripts:/scripts:ro" -v "$PWD/docs:/out" \
+  -e BASE_URL=http://host.docker.internal:8000/api/v1 grafana/k6 run /scripts/k6_script.js \
   --summary-export /out/k6_summary.json --out csv=/out/perf/k6_points.csv
 docker run --rm -v "$PWD/docs/perf:/out" python:3.11-slim python /out/make_k6_charts.py     # the charts and k6_stats.json
 ```

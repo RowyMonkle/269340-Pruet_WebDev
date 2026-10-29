@@ -278,8 +278,9 @@ docker compose exec -e REQUIRE_DB=1 api pytest tests/test_concurrency.py tests/t
 docker compose exec -e API_URL=http://nginx -e REQUIRE_DB=1 api pytest tests/test_concurrency.py -v
 
 # the load test: 50 VUs, 3 minutes (summary in docs/k6_summary.json, raw points in docs/perf/k6_points.csv)
-docker run --rm --network 269340-pruet_ticweb_default -v "$PWD/scripts:/scripts:ro" -v "$PWD/docs:/out" \
-  -e BASE_URL=http://nginx/api/v1 grafana/k6 run /scripts/k6_script.js \
+# nginx answers on host port 8000; this form needs no Docker network name, so it works from any project folder
+docker run --rm --add-host=host.docker.internal:host-gateway -v "$PWD/scripts:/scripts:ro" -v "$PWD/docs:/out" \
+  -e BASE_URL=http://host.docker.internal:8000/api/v1 grafana/k6 run /scripts/k6_script.js \
   --summary-export /out/k6_summary.json --out csv=/out/perf/k6_points.csv
 
 # charts and per-endpoint numbers from the raw points
@@ -287,6 +288,62 @@ docker run --rm -v "$PWD/docs/perf:/out" python:3.11-slim python /out/make_k6_ch
 
 # integrity after the load
 docker compose exec api python scripts/verify_consistency.py
+
+# this report as a PDF (Performance_Audit_Report.pdf in the repository root; run it again after every change of the report)
+docker run --rm -v "$PWD:/repo" python:3.11-slim python /repo/docs/perf/make_report_pdf.py
 ```
+
+---
+
+## 10. Where to Find Each Result (Evidence Files)
+
+Every number in this report comes from one of the files below. The first table lists what you can open to see **results and charts**, the second the **scripts** that produce them, the third the **tests**. Paths are relative to the repository root.
+
+### 10.1 Results and Charts
+
+| File | What It Shows | Produced By | CP3 Requirement Covered |
+| :--- | :--- | :--- | :--- |
+| [`Performance_Audit_Report.pdf`](../Performance_Audit_Report.pdf) | This report as a PDF, the file name given in section 4 of the CP3 specification (repository root); the four charts are embedded, the figures are the same as in the Markdown | `docs/perf/make_report_pdf.py` | Audit report (`Performance_Audit_Report.pdf`) |
+| [`docs/Performance_Audit_Report.md`](Performance_Audit_Report.md) | This report (the source of the PDF): objectives, mechanism, query audit, methodology, raw k6 output, consistency audit, limitations, reproduction | written from the files below | Audit report |
+| [`README.md`](../README.md) section 7.13 | One-page PASS table against the specification and two charts (the report as a README section) | written from the files below | Audit report (Markdown section in `README.md`) |
+| [`docs/perf/k6_throughput.png`](perf/k6_throughput.png) | Figure 1: requests per second and virtual users over the whole test | `docs/perf/make_k6_charts.py` | Throughput: stable requests per second |
+| [`docs/perf/k6_latency.png`](perf/k6_latency.png) | Figure 2: $p50$, $p95$, $p99$ per 5-second window against the 200 ms and 500 ms limits | `docs/perf/make_k6_charts.py` | Latency: $p95 < 200\text{ ms}$, $p99 < 500\text{ ms}$ |
+| [`docs/perf/k6_endpoints.png`](perf/k6_endpoints.png) | Figure 3: $p95$ and $p99$ of every endpoint with its number of requests | `docs/perf/make_k6_charts.py` | Latency by operation (reads and writes) |
+| [`docs/perf/k6_outcomes.png`](perf/k6_outcomes.png) | Figure 4: every HTTP status code by endpoint (`409` only where it is the correct answer) | `docs/perf/make_k6_charts.py` | Error rate below 1% (proof that writes succeed) |
+| [`docs/k6_summary.json`](k6_summary.json) | k6's own summary of the official run: all metrics, the outcome of every threshold, every check | `k6 run ... --summary-export` | Load test metrics (RPS, $p95$, $p99$, error rate) |
+| [`docs/perf/k6_stats.json`](perf/k6_stats.json) | Per-endpoint requests, $p50$/$p95$/$p99$/max and status-code counts, plus the steady-state throughput statistics (mean, min, max, coefficient of variation) | `docs/perf/make_k6_charts.py` | Tables 2.1 and 2.2 of this report |
+| [`docs/perf/test_results.txt`](perf/test_results.txt) | The captured output of the graded test suites (22 concurrency tests, the specification's sample race, 20 query-count tests with the printed audit table, 20 database-guard tests, the whole suite of 218), the consistency audit and the index report | the commands written in the file | Concurrency verification, $N+1$ audit |
+| `docs/perf/k6_points.csv` | The raw measurement of every single request (about 56 MB). **Not stored in Git** (it is git-ignored): recreate it with the k6 command of section 9 | `k6 run ... --out csv=` | Source data of the four charts |
+| [`docs/perf/index_review.md`](perf/index_review.md) | Evidence of the index review: which indexes were dropped and why, with the measured effect | `scripts/index_report.py` and query plans | Query optimisation (supporting) |
+| [`docs/perf/resilience_results.md`](perf/resilience_results.md) | Measured behaviour during database outages, stuck locks and an exhausted pool | `scripts/resilience_lab.py` | Production readiness (supporting) |
+
+The raw k6 console output of the official run is in section 5.2 of this report, and the independent Locust cross-check is in section 2.5 (the profile is [`docs/perf/reference_locustfile.py`](perf/reference_locustfile.py)).
+
+### 10.2 Scripts That Produce the Results
+
+| File | What It Does |
+| :--- | :--- |
+| [`scripts/k6_script.js`](../scripts/k6_script.js) | The automated load test: 50 VUs for 3 minutes, 65% read / 35% write iterations, a contested 25-seat zone, deliberate double payments |
+| [`docs/perf/make_k6_charts.py`](perf/make_k6_charts.py) | Turns the raw k6 points into the four charts and `k6_stats.json` (runs in a throw-away `python:3.11-slim` container) |
+| [`docs/perf/make_report_pdf.py`](perf/make_report_pdf.py) | Exports this Markdown report to `Performance_Audit_Report.pdf` (throw-away container; formulas become plain symbols, links to repository files become plain text) |
+| [`scripts/verify_consistency.py`](../scripts/verify_consistency.py) | The 13 data-integrity checks across PostgreSQL and MongoDB (section 7) |
+| [`scripts/index_report.py`](../scripts/index_report.py) | Finds redundant indexes and foreign keys without an index |
+
+### 10.3 Tests
+
+| File | What It Proves | Run It With |
+| :--- | :--- | :--- |
+| [`tests/test_concurrency.py`](../tests/test_concurrency.py) | No race condition: 22 tests, including the specification's sample (`test_last_ticket_20_users`: 20 users, 1 winner, 19 times `409`) | `docker compose exec -e REQUIRE_DB=1 api pytest tests/test_concurrency.py -v` |
+| [`tests/test_query_counts.py`](../tests/test_query_counts.py) | No $N+1$: 20 tests; `-s` prints the audit table of SQL / MongoDB round trips and payload sizes | `docker compose exec -e REQUIRE_DB=1 api pytest tests/test_query_counts.py -v -s` |
+| [`tests/test_db_guards.py`](../tests/test_db_guards.py) | The databases themselves refuse a double charge, an unknown status and an oversold zone: 20 tests | `docker compose exec -e REQUIRE_DB=1 api pytest tests/test_db_guards.py -v` |
+
+### 10.4 Defence Material
+
+| File | What It Is |
+| :--- | :--- |
+| [`docs/defence_qa.md`](defence_qa.md) | 26 likely questions with answers, the figures to know and a live-demo runbook |
+| [`docs/audit_demo_script.md`](audit_demo_script.md) | The step-by-step commands for the live demonstration |
+
+**The PDF.** The CP3 specification names the deliverable `Performance_Audit_Report.pdf` "or a Markdown section in `README.md`". We deliver both: `Performance_Audit_Report.pdf` in the repository root, generated from this Markdown file by `docs/perf/make_report_pdf.py` (so both show the same figures), and README section 7.13. GitHub renders the formulas of the Markdown; in the PDF they are printed as plain symbols (for example `p95 < 200 ms`).
 
 ---

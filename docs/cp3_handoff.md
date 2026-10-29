@@ -14,7 +14,7 @@ Design and numbers: README section 7. This file is the checklist. Deadline: end 
 | M1 | Nannapat | README 7.5 and 7.6 | list endpoints as projections + `tests/test_query_counts.py` | done |
 | M2 | Poonyaporn | Nannapat's merge | **"after" run** + charts + `pg_stats` CSV | k6 run and charts done; `pg_stats` CSV open (optional) |
 | M2 | Natthakritta | Nannapat's merge | review against README 7.5, run full test suite + audit on a clean stack | done for what is merged |
-| M3 | Pandara | M2 outputs | `Performance_Audit_Report.pdf`, final README numbers | Markdown report and README 7.13 done; PDF optional |
+| M3 | Pandara | M2 outputs | `Performance_Audit_Report.pdf`, final README numbers | Markdown report, `Performance_Audit_Report.pdf` and README 7.13 done |
 | M4 | everyone | all merged | rehearsal of the defence on a clean checkout | open |
 
 Only M4 and the open items below are left.
@@ -56,10 +56,10 @@ Who checks you: Natthakritta re-ran the k6 script on a clean stack (three full r
 Code that is yours today: `README.md`, `docs/`, `frontend/`.
 
 - [x] **`docs/Performance_Audit_Report.md`** (Markdown, with charts): objectives and rubric mapping; load test results; concurrency control and its test results; query audit table; methodology and raw k6 output; consistency audit output; risks; reproduction commands. The summary is README 7.13 (the spec accepts a README section).
-- [ ] **`Performance_Audit_Report.pdf`** (optional, repository root, the name the spec asks for): export the Markdown report; every number must match README 7.13.
+- [x] **`Performance_Audit_Report.pdf`** (repository root, the name the spec asks for): generated from the Markdown report with `docs/perf/make_report_pdf.py`; run it again after every change of the report so that every number matches README 7.13.
 - [ ] **`docs/audit_demo_script.md` for CP3**: live race demo (README 7.3), query-count demo, load run, who answers which question. **Fix the known bugs in it**: step 2.2 (the events endpoint answers `{"items":[{"id":...}]}` and the parameter is `page_size`, not `limit`) and the "paying twice" scenario (it answers `409` now, not `400`).
 - [ ] **README upkeep**: keep section 7 statuses and numbers current; every command in the report must work.
-- [ ] **Packaging**: `git archive -o 269340_CP3.zip HEAD` (tracked files only, no `__pycache__`, `.env`, notes). Ask the instructor how and where to submit (the spec does not say).
+- [x] **Packaging**: `CP3_Concurrency_Control_and_Performance_Audit.zip` = `git archive --format=zip --prefix=CP3_Concurrency_Control_and_Performance_Audit/ -o CP3_Concurrency_Control_and_Performance_Audit.zip HEAD` (tracked files only, no `__pycache__`, `.env`, notes, raw k6 points). Still to do: ask the instructor how and where to submit (the spec does not say).
 - [ ] **Frontend**: pair with Nannapat on the booking demo page; update pages when the list responses change.
 
 Who checks you: each teammate reads the report section about their part; Natthakritta runs the commands in the report on a clean stack.
@@ -93,5 +93,5 @@ Rules for the others: tests that corrupt MongoDB on purpose need `bypass_documen
 - [x] Concurrency verification script: `tests/test_concurrency.py`
 - [x] Audited queries with projection and zero N+1 in list endpoints: `tests/test_query_counts.py`, README 7.10 (the original `GET /orders?user_id=` redirects to the bounded summary)
 - [x] Automated load test script: `scripts/k6_script.js` (Poonyaporn's k6 script, rewritten); Locust reference profile in `docs/perf/reference_locustfile.py`
-- [x] Performance audit report with charts and metrics: `docs/Performance_Audit_Report.md` + README 7.13 (the spec accepts a README section). Optional: export the PDF (Pandara)
+- [x] Performance audit report with charts and metrics: `docs/Performance_Audit_Report.md` + README 7.13 (the spec accepts a README section). The PDF is `Performance_Audit_Report.pdf` (repository root)
 - [ ] Clean zip built with `git archive`; submission channel confirmed with the instructor

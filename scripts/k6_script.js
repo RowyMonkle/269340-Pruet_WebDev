@@ -5,9 +5,10 @@ import { Rate, Counter } from 'k6/metrics';
 // CP3 load benchmark: 50 VUs for 3 minutes of concurrent read/write transactions.
 //
 // How to run (the stack must be up and seeded: docker compose up -d && docker compose exec api python seed.py):
-//   docker run --rm --network 269340-pruet_ticweb_default -v "$PWD/scripts:/scripts:ro" -v "$PWD/docs:/out" \
-//     -e BASE_URL=http://nginx/api/v1 grafana/k6 run /scripts/k6_script.js \
+//   docker run --rm --add-host=host.docker.internal:host-gateway -v "$PWD/scripts:/scripts:ro" -v "$PWD/docs:/out" \
+//     -e BASE_URL=http://host.docker.internal:8000/api/v1 grafana/k6 run /scripts/k6_script.js \
 //     --summary-export /out/k6_summary.json --out csv=/out/perf/k6_points.csv
+//   (nginx answers on host port 8000; this form needs no Docker network and does not depend on the name of the project folder)
 //   (docs/k6_summary.json is the report's source; docs/perf/k6_points.csv is the raw data for the charts and is git-ignored)
 // or, with k6 installed locally and the stack on port 8000:   k6 run scripts/k6_script.js
 //

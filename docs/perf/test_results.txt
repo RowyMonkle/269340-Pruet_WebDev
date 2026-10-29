@@ -1,0 +1,293 @@
+CP3 TEST RESULTS (captured output)
+==================================
+Generated : 2026-10-25
+Code under test : commit c235d66 (main), clean stack built from the repository at that commit (working tree clean), freshly migrated (alembic head 0008_drop_redundant_indexes) and seeded with `python seed.py`
+Environment : Docker Desktop (16 CPUs, 16 GB); API image Python 3.11.17, pytest 9.1.1; PostgreSQL 15, MongoDB 6.0, Nginx 1.27, two API replicas
+How to read it : every block starts with the command that produced it (run from the repository root, stack up and seeded). Times differ from run to run; the pass/fail result does not.
+What each block proves (CP3 specification section 4):
+  1  race condition prevention (test_concurrency.py, 22 tests)
+  2  the specification's own sample: 20 users race for the LAST ticket, exactly 1 wins, 19 get 409
+  3  the same races through Nginx and both replicas (two processes); 5 tests only work in-process and are skipped there
+  4  query projection / no N+1 (test_query_counts.py, 20 tests) with the printed audit table: SQL / MongoDB round trips and payload size
+  5  database-level guards (test_db_guards.py, 20 tests)
+  6  the whole suite (218 passed, 1 skipped)
+  7  data integrity: 13 consistency invariants across PostgreSQL and MongoDB
+  8  index review: nothing redundant, every foreign key indexed
+The load test (k6) is not in this file: its results are docs/k6_summary.json, docs/perf/k6_stats.json and the charts docs/perf/k6_*.png.
+
+================================================================================
+1. CONCURRENCY CONTROL: tests/test_concurrency.py (in-process)
+================================================================================
+$ docker compose exec -e REQUIRE_DB=1 api pytest tests/test_concurrency.py -v -W ignore -p no:cacheprovider
+
+============================= test session starts ==============================
+platform linux -- Python 3.11.17, pytest-9.1.1, pluggy-1.7.0 -- /usr/local/bin/python3.11
+rootdir: /app
+plugins: Faker-40.43.0, anyio-4.15.1
+collecting ... collected 22 items
+
+tests/test_concurrency.py::test_oversell_concurrency_protection PASSED   [  4%]
+tests/test_concurrency.py::test_same_seat_concurrency_protection PASSED  [  9%]
+tests/test_concurrency.py::test_idempotency_order_placement PASSED       [ 13%]
+tests/test_concurrency.py::test_idempotency_payload_mismatch PASSED      [ 18%]
+tests/test_concurrency.py::test_paying_twice_fails_with_409 PASSED       [ 22%]
+tests/test_concurrency.py::test_expiry_then_pay_fails_with_410 PASSED    [ 27%]
+tests/test_concurrency.py::test_last_ticket_20_users PASSED              [ 31%]
+tests/test_concurrency.py::test_parallel_payments_charge_the_order_once PASSED [ 36%]
+tests/test_concurrency.py::test_parallel_same_idempotency_key_creates_one_order PASSED [ 40%]
+tests/test_concurrency.py::test_opposite_order_multi_seat_bookings_never_return_5xx PASSED [ 45%]
+tests/test_concurrency.py::test_every_order_inserts_its_seats_in_one_global_order PASSED [ 50%]
+tests/test_concurrency.py::test_multi_ticket_orders_never_oversell PASSED [ 54%]
+tests/test_concurrency.py::test_sold_out_second_zone_returns_the_first_zones_seats PASSED [ 59%]
+tests/test_concurrency.py::test_event_id_spelling_cannot_bypass_the_seat_lock PASSED [ 63%]
+tests/test_concurrency.py::test_idempotent_replay_works_with_any_zone_spelling PASSED [ 68%]
+tests/test_concurrency.py::test_a_four_ticket_order_costs_one_mongo_read_and_one_reservation PASSED [ 72%]
+tests/test_concurrency.py::test_pay_vs_expiry_vs_cleanup_race_releases_each_seat_once PASSED [ 77%]
+tests/test_concurrency.py::test_parallel_cleanup_releases_each_hold_once PASSED [ 81%]
+tests/test_concurrency.py::test_concurrent_user_updates_do_not_lose_each_other PASSED [ 86%]
+tests/test_concurrency.py::test_database_deadlock_is_answered_with_409_and_seats_are_returned PASSED [ 90%]
+tests/test_concurrency.py::test_exhausted_connection_pool_is_answered_with_503 PASSED [ 95%]
+tests/test_concurrency.py::test_statement_timeout_during_booking_is_answered_with_503_and_seats_are_returned PASSED [100%]
+
+============================== 22 passed in 8.62s ==============================
+
+================================================================================
+2. THE SPECIFICATION'S SAMPLE RACE through Nginx and both replicas (20 users, last ticket)
+================================================================================
+$ docker compose exec -e API_URL=http://nginx -e REQUIRE_DB=1 api pytest tests/test_concurrency.py -k last_ticket -s -v -W ignore -p no:cacheprovider
+
+============================= test session starts ==============================
+platform linux -- Python 3.11.17, pytest-9.1.1, pluggy-1.7.0 -- /usr/local/bin/python3.11
+rootdir: /app
+plugins: Faker-40.43.0, anyio-4.15.1
+collecting ... collected 22 items / 21 deselected / 1 selected
+
+tests/test_concurrency.py::test_last_ticket_20_users Concurrent Test Results -> Successes: 1 (Must be 1) | Conflicts: 19
+PASSED
+
+======================= 1 passed, 21 deselected in 1.49s =======================
+
+================================================================================
+3. CONCURRENCY CONTROL through Nginx and both replicas (the 5 skipped tests only work in-process)
+================================================================================
+$ docker compose exec -e API_URL=http://nginx -e REQUIRE_DB=1 api pytest tests/test_concurrency.py -v -W ignore -p no:cacheprovider
+
+============================= test session starts ==============================
+platform linux -- Python 3.11.17, pytest-9.1.1, pluggy-1.7.0 -- /usr/local/bin/python3.11
+rootdir: /app
+plugins: Faker-40.43.0, anyio-4.15.1
+collecting ... collected 22 items
+
+tests/test_concurrency.py::test_oversell_concurrency_protection PASSED   [  4%]
+tests/test_concurrency.py::test_same_seat_concurrency_protection PASSED  [  9%]
+tests/test_concurrency.py::test_idempotency_order_placement PASSED       [ 13%]
+tests/test_concurrency.py::test_idempotency_payload_mismatch PASSED      [ 18%]
+tests/test_concurrency.py::test_paying_twice_fails_with_409 PASSED       [ 22%]
+tests/test_concurrency.py::test_expiry_then_pay_fails_with_410 PASSED    [ 27%]
+tests/test_concurrency.py::test_last_ticket_20_users PASSED              [ 31%]
+tests/test_concurrency.py::test_parallel_payments_charge_the_order_once PASSED [ 36%]
+tests/test_concurrency.py::test_parallel_same_idempotency_key_creates_one_order PASSED [ 40%]
+tests/test_concurrency.py::test_opposite_order_multi_seat_bookings_never_return_5xx PASSED [ 45%]
+tests/test_concurrency.py::test_every_order_inserts_its_seats_in_one_global_order SKIPPED [ 50%]
+tests/test_concurrency.py::test_multi_ticket_orders_never_oversell PASSED [ 54%]
+tests/test_concurrency.py::test_sold_out_second_zone_returns_the_first_zones_seats PASSED [ 59%]
+tests/test_concurrency.py::test_event_id_spelling_cannot_bypass_the_seat_lock PASSED [ 63%]
+tests/test_concurrency.py::test_idempotent_replay_works_with_any_zone_spelling PASSED [ 68%]
+tests/test_concurrency.py::test_a_four_ticket_order_costs_one_mongo_read_and_one_reservation SKIPPED [ 72%]
+tests/test_concurrency.py::test_pay_vs_expiry_vs_cleanup_race_releases_each_seat_once PASSED [ 77%]
+tests/test_concurrency.py::test_parallel_cleanup_releases_each_hold_once PASSED [ 81%]
+tests/test_concurrency.py::test_concurrent_user_updates_do_not_lose_each_other PASSED [ 86%]
+tests/test_concurrency.py::test_database_deadlock_is_answered_with_409_and_seats_are_returned SKIPPED [ 90%]
+tests/test_concurrency.py::test_exhausted_connection_pool_is_answered_with_503 SKIPPED [ 95%]
+tests/test_concurrency.py::test_statement_timeout_during_booking_is_answered_with_503_and_seats_are_returned SKIPPED [100%]
+
+======================== 17 passed, 5 skipped in 4.74s =========================
+
+================================================================================
+4. QUERY PROJECTION AND N+1: tests/test_query_counts.py (prints the audit table)
+================================================================================
+$ docker compose exec -e REQUIRE_DB=1 api pytest tests/test_query_counts.py -v -s -W ignore -p no:cacheprovider
+
+============================= test session starts ==============================
+platform linux -- Python 3.11.17, pytest-9.1.1, pluggy-1.7.0 -- /usr/local/bin/python3.11
+rootdir: /app
+plugins: Faker-40.43.0, anyio-4.15.1
+collecting ... collected 20 items
+
+tests/test_query_counts.py::test_the_counter_sees_n_plus_one_and_does_not_invent_it PASSED
+tests/test_query_counts.py::test_read_endpoint_round_trips_do_not_grow_with_the_data[GET /users (list)] PASSED
+tests/test_query_counts.py::test_read_endpoint_round_trips_do_not_grow_with_the_data[GET /users/{id}] PASSED
+tests/test_query_counts.py::test_read_endpoint_round_trips_do_not_grow_with_the_data[GET /orders/summary] PASSED
+tests/test_query_counts.py::test_read_endpoint_round_trips_do_not_grow_with_the_data[GET /orders/{id}/summary] PASSED
+tests/test_query_counts.py::test_read_endpoint_round_trips_do_not_grow_with_the_data[GET /orders/{id} (detail)] PASSED
+tests/test_query_counts.py::test_read_endpoint_round_trips_do_not_grow_with_the_data[GET /orders/{id}/payments] PASSED
+tests/test_query_counts.py::test_read_endpoint_round_trips_do_not_grow_with_the_data[GET /orders?user_id= (redirect)] PASSED
+tests/test_query_counts.py::test_read_endpoint_round_trips_do_not_grow_with_the_data[GET /events (list)] PASSED
+tests/test_query_counts.py::test_read_endpoint_round_trips_do_not_grow_with_the_data[GET /products (alias of events)] PASSED
+tests/test_query_counts.py::test_order_summaries_are_small_and_do_not_grow_with_the_number_of_orders PASSED
+tests/test_query_counts.py::test_order_summary_has_no_nested_children PASSED
+tests/test_query_counts.py::test_events_list_is_a_summary_without_the_heavy_fields PASSED
+tests/test_query_counts.py::test_events_list_derives_lowest_price_and_seats_left_in_the_database PASSED
+tests/test_query_counts.py::test_events_list_pages_do_not_overlap PASSED
+tests/test_query_counts.py::test_users_list_returns_plain_columns_and_no_secrets PASSED
+tests/test_query_counts.py::test_original_orders_list_payload_is_bounded PASSED
+tests/test_query_counts.py::test_booking_costs_the_same_round_trips_for_1_and_for_20_tickets PASSED
+tests/test_query_counts.py::test_payment_costs_the_same_round_trips_for_1_and_for_20_tickets PASSED
+tests/test_query_counts.py::test_paying_an_expired_hold_also_costs_the_same_round_trips PASSED
+
+QUERY AUDIT  (database round trips per request; payload of the answer)
+endpoint                            data                        SQL  Mongo       KB
+GET /users (list)                   page_size=1                   2      0      0.3
+GET /users (list)                   page_size=100                 2      0     24.1
+
+GET /users/{id}                     1 user                        1      0      0.3
+GET /users/{id}                     user with 300 orders          1      0      0.3
+
+GET /orders/summary                 1 order                       2      0      0.2
+GET /orders/summary                 300 orders, limit 20          2      0      3.8
+
+GET /orders/{id}/summary            1 ticket + 1 payment          1      0      0.2
+GET /orders/{id}/summary            50 tickets + 50 payments      1      0      0.2
+
+GET /orders/{id} (detail)           1 ticket + 1 payment          1      0      0.7
+GET /orders/{id} (detail)           50 tickets + 50 payments      1      0     20.9
+
+GET /orders/{id}/payments           1 payment                     2      0      0.2
+GET /orders/{id}/payments           50 payments                   2      0     10.9
+
+GET /orders?user_id= (redirect)     1 order                       2      0      0.2
+GET /orders?user_id= (redirect)     300 orders                    2      0      3.8
+
+GET /events (list)                  page_size=1                   0      2      0.3
+GET /events (list)                  page_size=100                 0      2     27.1
+
+GET /products (alias of events)     page_size=1                   0      2      0.3
+GET /products (alias of events)     page_size=100                 0      2     27.1
+
+payload: GET /orders/summary        10 orders                     2      0      1.9
+payload: GET /orders/summary        300 orders, limit 20          2      0      3.8
+
+payload: GET /events                100 events                    0      2     27.1
+
+payload: GET /users                 page_size=100                 2      0     24.1
+
+payload: GET /orders?user_id=       300 orders                    2      0      3.8
+
+POST /orders (booking)              1 ticket(s)                   3      3      0.0
+POST /orders (booking)              20 ticket(s)                  3      3      0.0
+
+POST /orders/{id}/payments          1 ticket(s)                   6      1      0.0
+POST /orders/{id}/payments          20 ticket(s)                  6      1      0.0
+
+POST payments (expired hold)        1 ticket(s)                   5      1      0.0
+POST payments (expired hold)        20 ticket(s)                  5      1      0.0
+
+
+============================== 20 passed in 3.29s ==============================
+
+================================================================================
+5. DATABASE GUARDS: tests/test_db_guards.py
+================================================================================
+$ docker compose exec -e REQUIRE_DB=1 api pytest tests/test_db_guards.py -v -W ignore -p no:cacheprovider
+
+============================= test session starts ==============================
+platform linux -- Python 3.11.17, pytest-9.1.1, pluggy-1.7.0 -- /usr/local/bin/python3.11
+rootdir: /app
+plugins: Faker-40.43.0, anyio-4.15.1
+collecting ... collected 20 items
+
+tests/test_db_guards.py::test_the_database_refuses_a_second_completed_payment PASSED [  5%]
+tests/test_db_guards.py::test_failed_and_pending_attempts_are_still_allowed_alongside_one_completed PASSED [ 10%]
+tests/test_db_guards.py::test_two_writers_racing_with_no_application_lock_charge_the_order_once PASSED [ 15%]
+tests/test_db_guards.py::test_a_charge_the_database_blocked_is_answered_409_and_saves_nothing PASSED [ 20%]
+tests/test_db_guards.py::test_the_database_refuses_a_value_outside_the_known_vocabulary[chk_orders_status] PASSED [ 25%]
+tests/test_db_guards.py::test_the_database_refuses_a_value_outside_the_known_vocabulary[chk_tickets_status] PASSED [ 30%]
+tests/test_db_guards.py::test_the_database_refuses_a_value_outside_the_known_vocabulary[chk_payments_status] PASSED [ 35%]
+tests/test_db_guards.py::test_the_database_refuses_a_value_outside_the_known_vocabulary[chk_outbox_status] PASSED [ 40%]
+tests/test_db_guards.py::test_the_database_refuses_a_value_outside_the_known_vocabulary[chk_users_role] PASSED [ 45%]
+tests/test_db_guards.py::test_every_status_the_application_writes_is_still_accepted PASSED [ 50%]
+tests/test_db_guards.py::test_the_guards_are_installed_and_fully_validated PASSED [ 55%]
+tests/test_db_guards.py::test_mongodb_validator_is_installed PASSED      [ 60%]
+tests/test_db_guards.py::test_mongodb_refuses_a_zone_booked_beyond_its_capacity PASSED [ 65%]
+tests/test_db_guards.py::test_mongodb_refuses_a_negative_counter PASSED  [ 70%]
+tests/test_db_guards.py::test_mongodb_refuses_to_shrink_a_zone_below_what_is_sold PASSED [ 75%]
+tests/test_db_guards.py::test_mongodb_refuses_a_new_event_that_is_already_oversold PASSED [ 80%]
+tests/test_db_guards.py::test_mongodb_accepts_every_legitimate_state PASSED [ 85%]
+tests/test_db_guards.py::test_installing_the_validator_twice_is_harmless PASSED [ 90%]
+tests/test_db_guards.py::test_the_booking_flow_still_works_with_the_validator PASSED [ 95%]
+tests/test_db_guards.py::test_the_api_rejects_an_oversold_zone_with_400_before_it_reaches_the_database PASSED [100%]
+
+============================== 20 passed in 2.36s ==============================
+
+================================================================================
+6. THE WHOLE TEST SUITE
+================================================================================
+$ docker compose exec -e REQUIRE_DB=1 api pytest tests -q -W ignore -p no:cacheprovider
+
+........................................................................ [ 32%]
+........................................................................ [ 65%]
+............................s........................................... [ 98%]
+...                                                                      [100%]
+218 passed, 1 skipped in 25.51s
+
+================================================================================
+7. CONSISTENCY AUDIT (PostgreSQL vs MongoDB)
+================================================================================
+$ docker compose exec api python scripts/verify_consistency.py
+
+[consistency] PostgreSQL vs MongoDB audit
+  PASS  duplicate_active_seats           0
+  PASS  double_charged_orders            0
+  PASS  confirmed_without_payment        0
+  PASS  payment_amount_mismatch          0
+  PASS  order_total_mismatch             0
+  PASS  dead_order_with_active_tickets   0
+  PASS  ticket_state_mismatch            0
+  PASS  negative_booked_count            0
+  PASS  mongo_over_capacity              0
+  PASS  pg_over_capacity                 0
+  PASS  drift_mongo_below_pg             0
+  PASS  drift_mongo_above_pg             0
+  PASS  tickets_for_unknown_zone         0
+[consistency] ALL CHECKS PASSED
+
+================================================================================
+8. INDEX REPORT
+================================================================================
+$ docker compose exec api python scripts/index_report.py
+
+[index-report] schema=public  24 indexes, 2.5 MB in total, statistics reset at never
+
+  index                                table            scans      size  kind
+  backfill_checkpoints_pkey            backfill_checkpoints      0      8 kB  primary key
+  feature_flags_pkey                   feature_flags        94     16 kB  primary key
+  idx_orders_status_expires            orders               95     72 kB  plain
+  idx_orders_user_created              orders              247    192 kB  plain
+  idx_orders_user_status               orders               15     72 kB  plain
+  orders_idempotency_key_key           orders              126     72 kB  unique
+  orders_order_number_key              orders                0    168 kB  unique
+  orders_pkey                          orders            10083    104 kB  primary key
+  idx_outbox_status_created            outbox_events        32     96 kB  plain
+  outbox_events_pkey                   outbox_events      3863    200 kB  primary key
+  idx_payments_order_status            payments           2564     80 kB  plain
+  payments_payment_reference_key       payments              0     96 kB  unique
+  payments_pkey                        payments             32     64 kB  primary key
+  uq_payments_order_completed          payments            207     48 kB  unique
+  idx_tickets_event_zone               tickets              31    168 kB  plain
+  idx_tickets_order_id                 tickets            3543    168 kB  plain
+  tickets_pkey                         tickets               0    232 kB  primary key
+  tickets_ticket_code_key              tickets               0    320 kB  unique
+  uq_tickets_event_zone_seat           tickets               0    288 kB  unique
+  idx_users_created_at                 users                 0     16 kB  plain
+  idx_users_last_name                  users                 0     16 kB  plain
+  users_email_key                      users                 2     48 kB  unique
+  users_pkey                           users              3381     16 kB  primary key
+  users_username_key                   users                 0     40 kB  unique
+
+  REDUNDANT (structural, safe to drop): 0
+
+  FOREIGN KEYS WITHOUT AN INDEX: 0
+
+  UNUSED since the last statistics reset (evidence only, judge by hand; tables >= 10000 rows): 0
+
+[index-report] OK: nothing redundant, every foreign key is indexed
