@@ -1,0 +1,170 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Concert details — ENCORE</title><!-- event.js replaces this with "Artist — Tour | ENCORE" -->
+  <meta name="description" content="Concert details, ticket prices and venue information." />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Bodoni+Moda:opsz,wght@6..96,400;6..96,500&family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="../theme.css" /><!-- global theme + nav/footer (shared with index.html) -->
+  <link rel="stylesheet" href="event.css" /><!-- concert details layout only -->
+</head>
+<body>
+  <!-- ================= Navigation (same markup as index.html) ================= -->
+  <header class="nav">
+    <div class="container nav__inner">
+      <a class="brand" href="../" aria-label="Home">
+        <img src="../assets/audio-lines.svg" width="26" height="26" alt="" />
+        <span class="brand__name">JUNG PA!</span>
+      </a>
+      <nav class="nav__links" aria-label="Main">
+        <a href="../#discover">Discover</a>
+        <a href="../#concerts" class="is-active">Concerts</a><!-- this page belongs to Concerts -->
+        <a href="../#artists">Artists</a>
+        <a href="../#tickets">Your tickets</a>
+      </nav>
+      <div class="nav__actions">
+        <span class="nav__location">
+          <img src="../assets/map-pin.svg" width="17" height="17" alt="" />
+          Bangkok, TH
+        </span>
+        <a class="btn btn--outline" href="#login">Log in / Sign up</a>
+      </div>
+    </div>
+  </header>
+
+  <main id="event" aria-busy="true"><!-- aria-busy is cleared by event.js once the concert has loaded -->
+    <!-- breadcrumb: event.js fills city and artist -->
+    <nav class="container crumbs" aria-label="Breadcrumb">
+      <a href="../">Discover</a> / <a href="../#concerts">Concerts</a> / <span id="crumb-city">…</span> / <span id="crumb-name" aria-current="page">…</span>
+    </nav>
+
+    <!-- ================= Concert hero ================= -->
+    <section class="ehero" aria-labelledby="event-title">
+      <img class="ehero__photo" src="../assets/event-hero.png" alt="" />
+      <div class="ehero__scrim" aria-hidden="true"></div>
+      <div class="container ehero__inner">
+        <div class="ehero__tags" id="event-tags"></div><!-- category + availability badges -->
+        <h1 id="event-title" class="display ehero__title"><span class="skel skel--title"></span></h1>
+        <p class="ehero__sub" id="event-sub"></p>
+        <p class="ehero__lead" id="event-lead"></p>
+        <p class="ehero__meta"><span id="event-when"></span><span id="event-where"></span></p>
+        <div class="ehero__social">
+          <button type="button" class="link-btn" id="save-btn" aria-pressed="false">♡ Save concert</button>
+          <button type="button" class="link-btn" id="share-btn">↗ Share</button>
+        </div>
+      </div>
+    </section>
+
+    <!-- error / not-found state (hidden unless the API call fails) -->
+    <section class="container estate" id="event-error" hidden>
+      <h2 class="h-28" id="error-title">We couldn’t find that concert.</h2>
+      <p class="muted-14" id="error-text">The link may be old or the concert may have been removed.</p>
+      <div class="estate__actions">
+        <a class="btn btn--primary" href="../#concerts">Browse concerts <img src="../assets/arrow-right-white.svg" width="16" height="16" alt="" /></a>
+        <button type="button" class="btn btn--outline" id="retry-btn" hidden>Try again</button>
+      </div>
+    </section>
+
+    <!-- ================= Concert body ================= -->
+    <div class="container ebody" id="event-body">
+      <div class="ebody__main">
+        <nav class="tabs" aria-label="Concert sections">
+          <a href="#about" class="is-active">About the show</a>
+          <a href="#info">Event information</a>
+          <a href="#venue">Venue &amp; travel</a>
+        </nav>
+
+        <section id="about" class="about">
+          <h2 class="about__title" id="about-title">About the show</h2>
+          <p class="about__lead" id="about-lead"></p>
+          <p class="about__text" id="about-text"></p>
+        </section>
+
+        <section id="info" class="info" aria-label="Event information">
+          <div class="facts">
+            <div class="panel fact">
+              <img src="../assets/clock.svg" width="20" height="20" alt="" />
+              <h3>Show time</h3>
+              <p id="fact-time">—</p>
+            </div>
+            <div class="panel fact">
+              <img src="../assets/users.svg" width="20" height="20" alt="" />
+              <h3>Age guidance</h3>
+              <p id="fact-age">—</p>
+            </div>
+            <div class="panel fact">
+              <img src="../assets/ticket.svg" width="20" height="20" alt="" />
+              <h3>Ticket delivery</h3>
+              <p id="fact-delivery">Secure mobile tickets</p>
+            </div>
+          </div>
+          <!-- everything else in dynamic_attributes (cameras, parking, gate, stage specs ...) -->
+          <dl class="panel goodtoknow" id="good-to-know" hidden></dl>
+        </section>
+
+        <section id="venue" class="panel venue">
+          <div class="venue__head">
+            <h2 id="venue-name">Venue</h2>
+            <img src="../assets/map-pin-purple.svg" width="20" height="20" alt="" />
+          </div>
+          <p class="venue__text" id="venue-text"></p>
+          <div class="venue__links">
+            <a id="directions" href="#" target="_blank" rel="noopener">↗ Get directions</a>
+            <span>♿ Accessible seating available</span>
+          </div>
+        </section>
+
+        <section class="faq" aria-labelledby="faq-title">
+          <h2 id="faq-title">Before you go</h2>
+          <!-- <details> gives a keyboard-accessible accordion with no JavaScript -->
+          <details>
+            <summary>Can I transfer my tickets? <img src="../assets/plus.svg" width="16" height="16" alt="" /></summary>
+            <p>Yes. Tickets live in “Your tickets” and can be sent to a friend up to 24 hours before doors open.</p>
+          </details>
+          <details>
+            <summary>What if the concert is rescheduled? <img src="../assets/plus.svg" width="16" height="16" alt="" /></summary>
+            <p>Your tickets stay valid for the new date. If you can’t make it, you can ask for a full refund within 14 days of the announcement.</p>
+          </details>
+          <details>
+            <summary>How do I book accessible seats? <img src="../assets/plus.svg" width="16" height="16" alt="" /></summary>
+            <p>Pick any zone marked accessible on the seat map, or contact our support team and we’ll find the best spot for you and a companion.</p>
+          </details>
+        </section>
+      </div>
+
+      <!-- ================= Ticket panel ================= -->
+      <aside class="panel tickets" aria-labelledby="tickets-title">
+        <p class="tickets__eyebrow" id="tickets-title">YOUR PLACE IN THE CROWD</p>
+        <p class="tickets__from"><span>From</span> <strong id="price-from">—</strong></p>
+        <p class="tickets__note">Price per ticket. Choose a zone, then pick your seats.</p>
+        <!-- one radio per zone so the choice is keyboard-accessible; event.js builds them -->
+        <fieldset class="zones">
+          <legend class="sr-only">Ticket zone</legend>
+          <div id="zone-list"></div>
+        </fieldset>
+        <a class="btn btn--primary tickets__cta" id="seats-btn" href="#" aria-disabled="true">Choose your seats <img src="../assets/arrow-right-white.svg" width="16" height="16" alt="" /></a>
+        <p class="tickets__left" id="seats-left"></p>
+        <div class="tickets__guarantee">
+          <img src="../assets/shield-check.svg" width="20" height="20" alt="" />
+          <p>Official tickets, secure checkout and fan-first support. Always.</p>
+        </div>
+      </aside>
+    </div>
+  </main>
+
+  <footer class="footer footer--slim">
+    <div class="container">
+      <div class="footer__legal">
+        <span>© 2026 ENCORE. Made for the live moment.</span>
+        <span class="footer__legal-links"><a href="#privacy">Privacy policy</a><a href="#terms">Terms of use</a><a href="#cookies">Cookies</a></span>
+      </div>
+    </div>
+  </footer>
+
+  <script src="../session.js"></script><!-- logged-in user + nav button (shared) -->
+  <script src="event.js"></script>
+</body>
+</html>

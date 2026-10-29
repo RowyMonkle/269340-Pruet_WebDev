@@ -63,3 +63,9 @@ class UserResponse(BaseModel):
     updated_at: Optional[datetime] = None
 
     model_config = ConfigDict(from_attributes=True)
+
+
+class UserLogin(BaseModel):
+    """Body of POST /users/login (ENCORE log-in page)."""
+    email: EmailStr  # same type as registration, so a malformed address is a 400, not a lookup
+    password: str = Field(..., min_length=1, max_length=100)  # no length rule here: old accounts may predate the current one

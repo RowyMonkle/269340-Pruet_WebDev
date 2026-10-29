@@ -9,7 +9,7 @@ from sqlalchemy.orm import Session, load_only
 from app.core.config import settings
 from app.core.flags import get_flag
 from app.models.sql_models import User
-from app.schemas.user import UserCreate, UserResponse, UserUpdate
+from app.schemas.user import UserCreate, UserLogin, UserResponse, UserUpdate  # UserLogin: body of POST /users/login
 
 
 def split_full_name(full_name: Optional[str]) -> Tuple[str, str]:
@@ -312,4 +312,36 @@ def update_user(db: Session, user_id: int, user_in: UserUpdate) -> UserResponse:
         db.rollback()
         raise _conflict("email")
     db.refresh(user)
+    return build_user_response(user, read_source)
+
+
+# A real hash of a throw-away password, computed once. Checking against it when the email is unknown makes a
+# wrong email take as long as a wrong password, so response time does not reveal which emails have accounts.
+_DUMMY_HASH = hash_password("not-a-real-password")
+
+
+def authenticate_user(db: Session, login_in: UserLogin) -> UserResponse:
+    """POST /users/login: check email + password, return the public user (never the hash).
+
+    - One SELECT of the columns the response needs plus hashed_password (load_only, like the other reads).
+    - Email match is case-insensitive (users type "Jamie@Mail.com" and "jamie@mail.com" interchangeably).
+    - Wrong email and wrong password both answer the same 401, so the endpoint cannot be used to find accounts.
+    """
+    read_source = get_flag("user_name_read_source")
+    columns = _user_column_list(include_legacy=read_source != "new") + (User.hashed_password,)
+    user = (
+        db.query(*columns)
+        .filter(func.lower(User.email) == login_in.email.lower())
+        .first()
+    )
+    stored_hash = user.hashed_password if user else _DUMMY_HASH
+    try:
+        password_ok = verify_password(login_in.password, stored_hash)
+    except ValueError:  # a malformed stored hash must be a failed login, not a 500
+        password_ok = False
+    if not user or not password_ok:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Incorrect email or password",
+        )
     return build_user_response(user, read_source)

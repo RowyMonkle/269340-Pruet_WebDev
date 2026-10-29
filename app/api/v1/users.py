@@ -4,8 +4,10 @@ from sqlalchemy.orm import Session
 
 from app.core.database import get_db
 from app.schemas.common import PaginatedResponse
-from app.schemas.user import UserCreate, UserResponse, UserUpdate
+from app.schemas.errors import ErrorResponse  # documents the 401 body in Swagger
+from app.schemas.user import UserCreate, UserLogin, UserResponse, UserUpdate  # UserLogin: body of POST /users/login
 from app.services.user_service import (
+    authenticate_user,  # POST /users/login
     create_user as create_user_svc,
     get_user_by_id as get_user_by_id_svc,
     get_users_paginated,
@@ -27,6 +29,25 @@ def create_user(
     db: Session = Depends(get_db),
 ):
     return create_user_svc(db, user_in)
+
+
+@router.post(
+    "/login",
+    response_model=UserResponse,
+    status_code=status.HTTP_200_OK,
+    summary="Log In",
+    description=(
+        "Check an email and password against the stored bcrypt hash and return the user (never the hash). "
+        "Wrong email and wrong password both answer 401 with the same message. "
+        "No session or token is issued yet: the ENCORE frontend keeps the returned user in the browser."
+    ),
+    responses={401: {"model": ErrorResponse, "description": "Incorrect email or password"}},
+)
+def login(
+    login_in: UserLogin,
+    db: Session = Depends(get_db),
+):
+    return authenticate_user(db, login_in)
 
 
 @router.put(

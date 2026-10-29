@@ -160,7 +160,7 @@
     $("#hero-artist-btn").textContent = `Meet ${e.artist?.name || main}`;
   }
 
-  const eventHref = (e) => (state.usingFallback ? "#concerts" : `event.html?id=${encodeURIComponent(e.id)}`);
+  const eventHref = (e) => (state.usingFallback ? "#concerts" : `event/event.html?id=${encodeURIComponent(e.id)}`);
 
   function renderGrid() {
     const list = filtered().slice(0, GRID_SIZE);
