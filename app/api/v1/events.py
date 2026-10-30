@@ -34,6 +34,7 @@ def list_events(
     page_size: int = Query(20, ge=1, le=100, description="Items per page"),
     category: Optional[str] = Query(None, description="Optional category filter (e.g., Concert, Festival)"),
     status: Optional[str] = Query(None, description="Optional status filter (e.g., upcoming, completed)"),
+    organizer_id: Optional[int] = Query(None, gt=0, description="Only the events of this organizer (PostgreSQL user id)"),
     mongo_db: Database = Depends(get_mongo_db),
 ):
     items, total = get_events_paginated(
@@ -42,6 +43,7 @@ def list_events(
         page_size=page_size,
         category=category,
         status_filter=status,
+        organizer_id=organizer_id,
     )
     total_pages = (total + page_size - 1) // page_size if total > 0 else 0
     return PaginatedResponse[EventSummary](

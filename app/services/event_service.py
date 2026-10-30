@@ -21,6 +21,7 @@ EVENT_PROJECTION = {
     "zones": 1,
     "tags": 1,
     "dynamic_attributes": 1,
+    "organizer_id": 1,  # owner of the event (organizer's PostgreSQL user id)
     "status": 1,
     "created_at": 1,
     "updated_at": 1,
@@ -40,6 +41,7 @@ def _format_event_doc(doc: Dict[str, Any]) -> EventResponse:
         zones=[ZoneSchema(**z) for z in doc.get("zones", [])],
         tags=doc.get("tags", []),
         dynamic_attributes=doc.get("dynamic_attributes", {}),
+        organizer_id=doc.get("organizer_id"),
         status=doc.get("status", "upcoming"),
         created_at=doc.get("created_at"),
         updated_at=doc.get("updated_at"),
@@ -56,6 +58,7 @@ EVENT_SUMMARY_PROJECT = {
         "category": 1,
         "date_time": 1,
         "status": 1,
+        "organizer_id": 1,
         "artist": {"name": {"$ifNull": ["$artist.name", ""]}, "genre": {"$ifNull": ["$artist.genre", ""]}},
         "venue": {"name": {"$ifNull": ["$venue.name", ""]}, "city": {"$ifNull": ["$venue.city", ""]}},
         "min_price": {"$min": "$zones.price"},
@@ -81,6 +84,7 @@ def _format_event_summary(doc: Dict[str, Any]) -> EventSummary:
         venue=VenueSummary(**doc.get("venue", {})),
         date_time=doc.get("date_time"),
         status=doc.get("status", "upcoming"),
+        organizer_id=doc.get("organizer_id"),
         min_price=doc.get("min_price"),
         seats_left=int(doc.get("seats_left") or 0),
     )
@@ -92,6 +96,7 @@ def get_events_paginated(
     page_size: int = 20,
     category: Optional[str] = None,
     status_filter: Optional[str] = None,
+    organizer_id: Optional[int] = None,
 ) -> Tuple[List[EventSummary], int]:
     """Paginated catalog list: two MongoDB commands (count + one aggregation) however many events, summary rows only."""
     query: Dict[str, Any] = {}
@@ -99,6 +104,8 @@ def get_events_paginated(
         query["category"] = category
     if status_filter:
         query["status"] = status_filter
+    if organizer_id is not None:
+        query["organizer_id"] = organizer_id  # one organizer's own events (index idx_events_organizer_date)
 
     events_collection = mongo_db["events"]
     total = events_collection.count_documents(query)

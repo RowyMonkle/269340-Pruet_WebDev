@@ -64,6 +64,8 @@ def init_mongo_indexes(db: Database) -> None:
             name="idx_events_text_search",
         ),
         IndexModel([("created_at", DESCENDING)], name="idx_events_created_at"),
+        # "my events" for an organizer: equality on organizer_id, then the list's date sort, from one index
+        IndexModel([("organizer_id", ASCENDING), ("date_time", ASCENDING)], name="idx_events_organizer_date"),
     ]
     db["events"].create_indexes(event_indexes)
 

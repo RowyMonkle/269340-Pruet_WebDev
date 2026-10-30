@@ -199,7 +199,8 @@ def test_events_list_is_a_summary_without_the_heavy_fields(env, data):
     response, _, kb = measure(f"/api/v1/events?category={data['category']}&page_size=100", "payload: GET /events", "100 events")
     body = response.json()
     assert body["total"] == 100 and len(body["items"]) == 100
-    allowed = {"id", "title", "category", "artist", "venue", "date_time", "status", "min_price", "seats_left"}
+    allowed = {"id", "title", "category", "artist", "venue", "date_time", "status", "min_price", "seats_left",
+               "organizer_id"}  # organizer_id: small int added for the organizer filter (still no zones / dynamic_attributes)
     for item in body["items"]:
         assert set(item) == allowed
         assert set(item["artist"]) == {"name", "genre"} and set(item["venue"]) == {"name", "city"}

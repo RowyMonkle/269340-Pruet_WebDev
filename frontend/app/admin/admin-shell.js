@@ -111,16 +111,19 @@
   }
 
   // every event with its zones: list pages (100 each) + one detail call per event, cached briefly
+  // organizers load only their own events (GET /events?organizer_id=); admins load everything
+  const mine = me.role === "organizer" ? `&organizer_id=${encodeURIComponent(me.id)}` : "";
+  const cacheKey = `${CACHE_KEY}.${me.role === "organizer" ? me.id : "all"}`;   // never mix one user's cache with another's
   async function loadEvents({ fresh = false, onProgress } = {}) {
     if (!fresh) {
       try {
-        const c = JSON.parse(sessionStorage.getItem(CACHE_KEY));
+        const c = JSON.parse(sessionStorage.getItem(cacheKey));
         if (c && Date.now() - c.at < CACHE_MS) return c.events;
       } catch { /* no cache */ }
     }
-    const first = await getJSON(`/events?page=1&page_size=100`);
+    const first = await getJSON(`/events?page=1&page_size=100${mine}`);
     let summaries = first.items;
-    for (let p = 2; p <= first.total_pages; p++) summaries = summaries.concat((await getJSON(`/events?page=${p}&page_size=100`)).items);
+    for (let p = 2; p <= first.total_pages; p++) summaries = summaries.concat((await getJSON(`/events?page=${p}&page_size=100${mine}`)).items);
     const out = [];
     let done = 0;
     await pool(summaries, PARALLEL, async (s) => {
@@ -129,7 +132,7 @@
       onProgress?.(++done, summaries.length);
     });
     out.sort((a, b) => String(a.date_time).localeCompare(String(b.date_time)));
-    try { sessionStorage.setItem(CACHE_KEY, JSON.stringify({ at: Date.now(), events: out })); } catch { /* too big / blocked: fine */ }
+    try { sessionStorage.setItem(cacheKey, JSON.stringify({ at: Date.now(), events: out })); } catch { /* too big / blocked: fine */ }
     return out;
   }
   function enrich(e) {   // totals per event, computed from its zones
@@ -177,5 +180,5 @@
     set(v) { try { v ? sessionStorage.setItem(TOKEN_KEY, v) : sessionStorage.removeItem(TOKEN_KEY); } catch { /* ignore */ } },
   };
 
-  window.Admin = { me, esc, money, num, asDate, fmtDate, getJSON, pool, loadEvents, title, openDrawer, closeDrawer, downloadCSV, token, toolbarRight: document.getElementById("toolbar-right") };
+  window.Admin = { me, isAdmin, esc, money, num, asDate, fmtDate, getJSON, pool, loadEvents, title, openDrawer, closeDrawer, downloadCSV, token, toolbarRight: document.getElementById("toolbar-right") };
 })();

@@ -58,7 +58,7 @@
     $("#count").textContent = `${A.num(list.length)} concert${list.length === 1 ? "" : "s"} · page ${view.page + 1} of ${pages}`;
     $("#prev").disabled = view.page === 0;
     $("#next").disabled = view.page >= pages - 1;
-    $("#sub").textContent = `${A.num(events.length)} concerts · ${A.num(events.reduce((n, e) => n + e.booked, 0))} of ${A.num(events.reduce((n, e) => n + e.capacity, 0))} seats booked.`;
+    $("#sub").textContent = `${A.isAdmin ? "" : "Your "}${A.num(events.length)} concerts · ${A.num(events.reduce((n, e) => n + e.booked, 0))} of ${A.num(events.reduce((n, e) => n + e.capacity, 0))} seats booked.`;
   }
 
   // ---------- concert drawer ----------
@@ -71,7 +71,7 @@
     A.openDrawer(
       `<h2>${A.esc(A.title(e))}</h2><p>${A.fmtDate(A.asDate(e.date_time), true)} · ${A.esc([e.venue?.name, e.venue?.city, e.venue?.country].filter(Boolean).join(", "))}</p>`,
       `<div class="stack">
-         <p class="note">ID <code>${A.esc(e.id)}</code> · ${A.esc(e.category)} · status ${A.esc(e.status)} · venue capacity ${A.num(e.venue?.capacity)}</p>
+         <p class="note">ID <code>${A.esc(e.id)}</code> · organizer ${e.organizer_id ? `#${e.organizer_id}` : "not assigned"} · ${A.esc(e.category)} · status ${A.esc(e.status)} · venue capacity ${A.num(e.venue?.capacity)}</p>
          ${zones.map((z) => {
            const pct = z.capacity ? (z.booked_count / z.capacity) * 100 : 0;
            return `<div class="prog">
@@ -113,6 +113,9 @@
           <label class="fld"><span>Country</span><input class="finput" name="country" maxlength="100" value="Thailand" /></label>
           <label class="fld"><span>Venue capacity</span><input class="finput" name="vcap" type="number" min="1" required /></label>
           <label class="fld"><span>Age guidance (optional)</span><input class="finput" name="age" placeholder="16+" maxlength="20" /></label>
+          ${A.isAdmin
+            ? `<label class="fld"><span>Organizer user ID (optional)</span><input class="finput" name="org" type="number" min="1" placeholder="e.g. 2" /></label>`
+            : `<p class="note full">This concert will be listed under your account (organizer #${A.esc(A.me.id)}).</p>`}
         </div>
         <div class="fld"><span>Zones</span><div class="zone-rows" id="zone-rows">${zoneRow({ name: "VIP", price: 4500, capacity: 200 })}${zoneRow({ name: "General Admission", price: 1500, capacity: 1000 })}</div></div>
         <button type="button" class="btn btn--outline" id="add-zone">+ Add zone</button>
@@ -160,6 +163,8 @@
       zones,
       tags: [v("genre").toLowerCase(), v("city").toLowerCase()].filter(Boolean),
       dynamic_attributes: v("age") ? { age_restriction: v("age") } : {},
+      // organizers own what they create; admins may assign one
+      organizer_id: A.isAdmin ? (Number(form.querySelector('[name="org"]').value) || null) : Number(A.me.id),
     };
     const btn = form.querySelector("#add-save");
     btn.disabled = true;

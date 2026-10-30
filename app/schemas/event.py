@@ -54,6 +54,7 @@ class EventSummary(BaseModel):
     venue: VenueSummary = VenueSummary()
     date_time: Optional[datetime] = None
     status: str = "upcoming"
+    organizer_id: Optional[int] = Field(None, description="PostgreSQL user id of the organizer who runs this event (null = not assigned)")
     min_price: Optional[float] = Field(None, description="Lowest zone price, null when the event has no zones")
     seats_left: int = Field(0, ge=0, description="Sum over zones of capacity - booked_count (never below 0)")
 
@@ -70,6 +71,7 @@ class EventCreate(BaseModel):
         default_factory=dict,
         description="Flexible MongoDB document fields: age restriction, festival passes, stage specs, merchandise info",
     )
+    organizer_id: Optional[int] = Field(None, gt=0, description="PostgreSQL user id of the organizer who runs this event (optional)")
 
 
 class EventResponse(BaseModel):
@@ -82,6 +84,7 @@ class EventResponse(BaseModel):
     zones: List[ZoneSchema]
     tags: List[str]
     dynamic_attributes: Dict[str, Any]
+    organizer_id: Optional[int] = None  # owner (PostgreSQL user id); events created before this field have none
     status: str = "upcoming"
     created_at: Optional[datetime] = None
     updated_at: Optional[datetime] = None
