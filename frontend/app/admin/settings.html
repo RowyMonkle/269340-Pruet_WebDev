@@ -1,0 +1,47 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Workspace settings — ENCORE Backstage</title>
+  <meta name="robots" content="noindex" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="../theme.css" />
+  <link rel="stylesheet" href="admin.css" />
+</head>
+<body data-page="settings">
+  <main class="content" id="content" hidden>
+    <div class="page-head">
+      <div>
+        <h1>Workspace settings</h1>
+        <p>Runtime feature flags for the CP2 user-name migration. Changes reach every API replica within a few seconds.</p>
+      </div>
+    </div>
+
+    <div class="row">
+      <section class="panel grow" aria-labelledby="flags-title">
+        <div class="panel__head"><div><h2 id="flags-title">Feature flags</h2><p>GET / PUT /api/v1/admin/flags · protected by X-Admin-Token</p></div></div>
+        <div id="flags"><p class="note">Enter the admin token to load the flags.</p></div>
+        <p class="msg" id="flag-msg" role="status" hidden></p>
+      </section>
+
+      <form class="panel side" id="token-form" aria-labelledby="token-title" novalidate>
+        <div class="panel__head"><h2 id="token-title">Admin token</h2></div>
+        <p class="note">The value of <code>ADMIN_TOKEN</code> in the project’s <code>.env</code>. It is kept only in this browser tab and sent only to the admin API.</p>
+        <label class="fld"><span>X-Admin-Token</span><input class="finput" id="token" type="password" autocomplete="off" /></label>
+        <p class="msg is-error" id="token-msg" role="alert" hidden></p>
+        <div class="page-head__actions">
+          <button type="submit" class="btn btn--primary">Unlock</button>
+          <button type="button" class="btn btn--outline" id="forget">Forget token</button>
+        </div>
+      </form>
+    </div>
+  </main>
+
+  <script src="../session.js"></script>
+  <script src="admin-shell.js"></script>
+  <script src="settings.js"></script>
+</body>
+</html>

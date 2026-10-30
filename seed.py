@@ -61,119 +61,141 @@ except ImportError:
     fake = SimpleFake()
 
 
-CONCERT_NAMES = [
-    "Neon Horizon Music Festival",
-    "BTS World Tour: Arirang in bangkok ",
-    "NCT Dream Live in Bangkok",
-    "Neon Horizon Music Festival",
-    "Chiang Mai Indie Soundwave",
-    "Ceasar feat. Olivia Dean Baan Rai Tour in Bangkok",
-    "Olivia Dean Baan Rai Tour, ESAN samakee",
-    "Siam Summer Beats 2026",
-    "Bangkok EDM Odyssey",
-    "Moonlight Jazz & Soul",
-    "Retro Rock Revival World Tour",
-    "Acoustic Haven Live Session",
-    "Cyberpunk Synthwave Night",
-    "Tropical Grooves Carnival",
-    "Global Techno Underground",
-    "Metallica: The Final Chapter Tour",
-    "Lady Gaga, May 2027 Bangkok Spectacle",
-    "Orchestral Cinematic Gala",
-    "Velvet Underground Tribute",
-    "Echoes of Eternity Live",
-    "Midnight Acoustic Symphony",
-    "Electric Dreamland Fest",
+# ---------------------------------------------------------------------------
+# Demo catalogue: K-pop / T-pop shows in Bangkok, Dec 2026 - Jun 2027.
+# FICTIONAL DATA for a class project: the artists are real, the shows, dates and prices are not announcements.
+# Prices follow past Bangkok arena tiers (e.g. LYKN at IMPACT Arena: 1,500-6,900 THB) scaled per act.
+# ---------------------------------------------------------------------------
+BANGKOK_TZ = timezone(timedelta(hours=7))
+
+IMPACT_ARENA = {
+    "name": "IMPACT Arena",
+    "city": "Bangkok",
+    "country": "Thailand",
+    "capacity": 13050,  # = sum of the zone capacities below
+    "address": "Muang Thong Thani, Pak Kret, Nonthaburi",
+}
+
+# Seat plan of IMPACT Arena (floor + level 2 + level 3). Zone names must match frontend/app/arena-map.js.
+# tier = index into BASE_TIER_PRICES (0 = most expensive).
+BASE_TIER_PRICES = [6900, 5900, 5500, 5000, 4500, 3000, 2000, 1500]
+ARENA_ZONES = (
+    # floor
+    [("A1", 1, 300), ("A2", 0, 600), ("A3", 0, 600), ("A4", 1, 300),
+     ("B1", 1, 250), ("B2", 0, 700), ("B3", 1, 250),
+     ("C1", 2, 150), ("C2", 1, 450), ("C3", 2, 150),
+     ("FF", 2, 80), ("HH", 2, 80)]
+    # level 2 (SB / SN have a restricted view, SG-SI face the stage)
+    + [("SB", 4, 200), ("SC", 4, 300), ("SD", 4, 300), ("SE", 4, 300), ("SF", 4, 300),
+       ("SG", 3, 300), ("SH", 3, 300), ("SI", 3, 300),
+       ("SJ", 4, 300), ("SK", 4, 300), ("SL", 4, 300), ("SM", 4, 300), ("SN", 4, 200)]
+    # level 3: front rows (3,000 tier) and rear rows of every block; the three blocks facing the stage at the back are the cheapest
+    + [(letter, 5, 200) for letter in "CDEFGHIJKLMNOPQRS"]
+    + [(f"{letter} Rear", 7 if letter in "JKL" else 6, 120) for letter in "CDEFGHIJKLMNOPQRS"]
+)
+
+# (name, genre, bio, price factor, Bangkok dates as (Y, M, D, hour), status)
+ARTISTS = [
+    ("BTS", "K-pop · Boy group", "Seven-member South Korean boy group under BIGHIT MUSIC.", 1.3,
+     [(2027, 3, 13, 19), (2027, 3, 14, 18)], "upcoming"),
+    ("BLACKPINK", "K-pop · Girl group", "Four-member South Korean girl group under YG Entertainment.", 1.3,
+     [(2027, 1, 23, 19), (2027, 1, 24, 18)], "upcoming"),
+    ("NCT 127", "K-pop · Boy group", "The Seoul-based unit of SM Entertainment's NCT.", 1.0,
+     [(2027, 2, 20, 19)], "upcoming"),
+    ("NCT DREAM", "K-pop · Boy group", "Seven-member unit of SM Entertainment's NCT.", 1.0,
+     [(2026, 12, 19, 19), (2026, 12, 20, 18)], "upcoming"),
+    ("aespa", "K-pop · Girl group", "Four-member girl group under SM Entertainment.", 1.0,
+     [(2027, 4, 17, 19), (2027, 4, 18, 18)], "upcoming"),
+    ("NewJeans", "K-pop · Girl group", "Five-member girl group under ADOR.", 1.0,
+     [(2027, 5, 15, 19)], "upcoming"),
+    ("SEVENTEEN", "K-pop · Boy group", "Thirteen-member boy group under PLEDIS Entertainment.", 1.1,
+     [(2027, 2, 6, 19), (2027, 2, 7, 18)], "upcoming"),
+    ("Stray Kids", "K-pop · Boy group", "Eight-member boy group under JYP Entertainment.", 1.1,
+     [(2027, 5, 29, 19), (2027, 5, 30, 18)], "upcoming"),
+    ("ENHYPEN", "K-pop · Boy group", "Boy group under BELIFT LAB, formed through the show I-LAND.", 1.0,
+     [(2027, 3, 27, 19)], "upcoming"),
+    ("A2O SOUL", "K-pop · Boy group · Rookie", "Rookie boy group from A2O Entertainment, the label founded by Lee Soo-man. Debuted in October 2026.", 0.7,
+     [(2027, 6, 12, 19)], "upcoming"),
+    ("A2O LITE", "K-pop · Girl group · Rookie", "Rookie girl group from A2O Entertainment, the label founded by Lee Soo-man. Debuted in October 2026.", 0.7,
+     [(2027, 6, 19, 19)], "coming_soon"),
+    ("LYKN", "T-pop · Boy group", "Thai boy group under RISER MUSIC.", 1.0,
+     [(2027, 1, 9, 19), (2027, 1, 10, 18)], "upcoming"),
+    ("PROXIE", "T-pop · Boy group", "Thai boy group.", 0.8,
+     [(2027, 4, 3, 19)], "upcoming"),
+    ("4EVE", "T-pop · Girl group", "Thai girl group.", 0.8,
+     [(2027, 2, 27, 19)], "upcoming"),
+    ("BUS", "T-pop · Boy group", "Thai boy group BUS (Because of You I Shine).", 0.8,
+     [(2027, 5, 1, 19)], "upcoming"),
 ]
 
-GENRES = ["K-Pop", "Neo-Soul", "Indie Rock", "EDM", "Jazz", "Synthwave", "Pop", "Classical", "Hip-Hop", "R&B", "Metal", "Folk"]
 
-VENUES = [
-    {"name": "Impact Arena", "city": "Bangkok", "country": "Thailand", "capacity": 12000, "address": "Muang Thong Thani"},
-    {"name": "Chiang Mai International Exhibition Hall", "city": "Chiang Mai", "country": "Thailand", "capacity": 8000, "address": "Chang Phueak"},
-    {"name": "Queen Sirikit National Convention Center", "city": "Bangkok", "country": "Thailand", "capacity": 15000, "address": "Ratchadaphisek Rd"},
-    {"name": "Phuket Laguna Concert Grounds", "city": "Phuket", "country": "Thailand", "capacity": 5000, "address": "Bang Tao Beach"},
-    {"name": "Thunder Dome", "city": "Bangkok", "country": "Thailand", "capacity": 6000, "address": "Popular Road"},
-    {"name": "Marina Bay Waterfront Stage", "city": "Singapore", "country": "Singapore", "capacity": 10000, "address": "Downtown Core"},
-    {"name": "Tokyo Dome City Hall", "city": "Tokyo", "country": "Japan", "capacity": 7500, "address": "Bunkyo City"},
-]
-
-STAGE_ZONES = [
-    {"name": "VIP Standing", "price": 4500.0, "capacity": 200},
-    {"name": "Front Zone A", "price": 3200.0, "capacity": 400},
-    {"name": "Middle Zone B", "price": 2200.0, "capacity": 600},
-    {"name": "General Admission", "price": 1200.0, "capacity": 1500},
-    {"name": "Balcony Tier 1", "price": 1800.0, "capacity": 300},
-]
+def _price(tier: int, factor: float) -> float:
+    """Tier price for one act, rounded to 100 THB."""
+    return float(round(BASE_TIER_PRICES[tier] * factor / 100) * 100)
 
 
-def seed_mongodb_events(num_events: int = 200) -> list:
-    """Seed MongoDB Events collection and return inserted event documents with zones."""
+def seed_mongodb_events(num_events: int = 0) -> list:
+    """Seed MongoDB Events: one document per show in ARTISTS (num_events is ignored, kept for old callers)."""
     print(f"\n[MongoDB] Initializing collection indexes...")
     init_mongo_indexes(mongo_db)
 
-    print(f"[MongoDB] Seeding {num_events} Events...")
     now = datetime.now(timezone.utc)
     events = []
-
-    for i in range(num_events):
-        venue = random.choice(VENUES)
-        concert_base = random.choice(CONCERT_NAMES)
-        title = f"{concert_base} #{i + 1}"
-        genre = random.choice(GENRES)
-        event_date = now + timedelta(days=random.randint(5, 180), hours=random.randint(16, 22))
-
-        # Dynamic Attributes showcase MongoDB document schema flexibility
-        dynamic_attrs = {
-            "age_restriction": random.choice(["All Ages", "18+", "20+", "Family Friendly"]),
-            "entry_gate": random.choice(["Gate 1", "Gate 2", "VIP North Gate"]),
-            "allow_cameras": random.choice([True, False]),
-            "parking_available": True,
-            "festival_pass_type": random.choice(["Single Day", "Weekend Pass", "Full Access"]),
-            "stage_specs": {
-                "sound_system": "L-Acoustics K2",
-                "lighting": "Martin MAC Viper Array",
-                "special_effects": ["CO2 Cannons", "Laser Show", "Confetti Drop"],
-            },
-        }
-
-        # Stage zones with matching prices
-        zones = []
-        for zone in STAGE_ZONES:
-            zones.append({
-                "name": zone["name"],
-                "price": zone["price"],
-                "capacity": zone["capacity"],
-                "booked_count": 0,  # Will be accurately synced with active held & valid tickets
+    for name, genre, bio, factor, dates, status in ARTISTS:
+        for night, (y, mo, d, hour) in enumerate(dates, start=1):
+            starts = datetime(y, mo, d, hour, 0, tzinfo=BANGKOK_TZ)
+            year = starts.year
+            title = f"{name} — Live in Bangkok {year}" + (f" · Night {night}" if len(dates) > 1 else "")
+            zones = [
+                {"name": z, "price": _price(tier, factor), "capacity": cap, "booked_count": 0}  # booked_count synced below
+                for z, tier, cap in ARENA_ZONES
+            ]
+            events.append({
+                "title": title,
+                "category": "Concert",
+                "artist": {"name": name, "genre": genre, "bio": bio, "spotify_id": None},
+                "venue": dict(IMPACT_ARENA),
+                "date_time": starts.astimezone(timezone.utc),
+                "zones": zones,
+                "tags": [t.strip().lower() for t in genre.split("·")] + ["bangkok", "impact arena"],
+                "dynamic_attributes": {
+                    "age_restriction": "All ages · under 7 not admitted",
+                    "doors_open": (starts - timedelta(hours=1, minutes=30)).astimezone(BANGKOK_TZ).strftime("%H:%M"),
+                    "entry_gate": "Gates 1-4, IMPACT Arena",
+                    "restricted_view_zones": ["SB", "SN"],
+                    "allow_cameras": False,
+                    "parking_available": True,
+                    "ticket_limit_per_order": 6,
+                    "demo_data": True,  # fictional show for the class project
+                },
+                "status": status,
+                "created_at": now - timedelta(days=random.randint(1, 60)),
+                "updated_at": now,
             })
-
-        event_doc = {
-            "title": title,
-            "category": random.choice(["Concert", "Music Festival", "Live Tour"]),
-            "artist": {
-                "name": f"{fake.first_name()} & The Sound",
-                "genre": genre,
-                "bio": f"Award-winning {genre} artist touring internationally in 2026.",
-                "spotify_id": f"spotify:artist:{uuid.uuid4().hex[:12]}",
-            },
-            "venue": venue,
-            "date_time": event_date,
-            "zones": zones,
-            "tags": [genre.lower(), "live", "festival", venue["city"].lower()],
-            "dynamic_attributes": dynamic_attrs,
-            "status": "upcoming",
-            "created_at": now - timedelta(days=random.randint(1, 60)),
-            "updated_at": now,
-        }
-        events.append(event_doc)
 
     mongo_db["events"].delete_many({})
     insert_res = mongo_db["events"].insert_many(events)
-    print(f"[MongoDB] Successfully inserted {len(insert_res.inserted_ids)} Events.")
+    print(f"[MongoDB] Successfully inserted {len(insert_res.inserted_ids)} Events ({len(ARTISTS)} artists, {len(ARENA_ZONES)} zones each).")
+    return list(mongo_db["events"].find())
 
-    # Return full events list with ObjectIds
-    cursor = list(mongo_db["events"].find())
-    return cursor
+
+def _seat_label(index: int) -> str:
+    """1 -> 'A-1', 18 -> 'A-18', 19 -> 'B-1': the same 18-seat rows the seat map in the website uses."""
+    row, seat = divmod(index - 1, 18)
+    letters = ""
+    row += 1
+    while row > 0:
+        row, rem = divmod(row - 1, 26)
+        letters = chr(65 + rem) + letters
+    return f"{letters}-{seat + 1}"
+
+
+def _popularity(event: dict) -> float:
+    """Bigger acts get more of the demo orders (weight = price factor squared)."""
+    for name, _g, _b, factor, _d, _s in ARTISTS:
+        if event["artist"]["name"] == name:
+            return factor * factor
+    return 1.0
 
 
 def seed_postgresql(mongo_events: list, num_users: int = 250, num_orders: int = 500) -> list:
@@ -227,6 +249,8 @@ def seed_postgresql(mongo_events: list, num_users: int = 250, num_orders: int = 
         total_outbox_created = 0
 
         seat_label_counters = {}
+        on_sale_events = [e for e in mongo_events if e.get("status") != "coming_soon"]  # nothing sold before sales open
+        event_weights = [_popularity(e) for e in on_sale_events]
 
         for i in range(1, num_orders + 1):
             uid = random.choice(user_ids)
@@ -250,7 +274,7 @@ def seed_postgresql(mongo_events: list, num_users: int = 250, num_orders: int = 
                 expires_at = now - timedelta(minutes=random.randint(15, 120))
 
             # Pick an event and zones
-            chosen_event = random.choice(mongo_events)
+            chosen_event = random.choices(on_sale_events, weights=event_weights, k=1)[0]
             event_id_str = str(chosen_event["_id"])
             zones_list = chosen_event["zones"]
 
@@ -260,7 +284,7 @@ def seed_postgresql(mongo_events: list, num_users: int = 250, num_orders: int = 
             order_total = Decimal("0.00")
 
             for _ in range(num_tickets_in_order):
-                zone = random.choice(zones_list)
+                zone = random.choice(zones_list)  # every zone, so the seat map shows sales everywhere
                 zone_name = zone["name"]
                 zone_price = Decimal(str(zone["price"]))
 
@@ -269,7 +293,7 @@ def seed_postgresql(mongo_events: list, num_users: int = 250, num_orders: int = 
                 seat_idx = seat_label_counters.get(seat_key, 1)
                 seat_label_counters[seat_key] = seat_idx + 1
 
-                seat_label = f"{zone_name[:2].strip()}-{seat_idx:03d}"
+                seat_label = _seat_label(seat_idx)  # "A-1", "A-2" ... like the website seat grid (was "VI-001")
                 tkt_code = f"TKT-{uuid.uuid4().hex[:12].upper()}"
 
                 ticket = Ticket(
@@ -448,7 +472,7 @@ def main():
     print("[SUCCESS] Both PostgreSQL and MongoDB are online and reachable.")
 
     # 1. Seed MongoDB events first so zones and prices are established
-    mongo_events = seed_mongodb_events(num_events=200)
+    mongo_events = seed_mongodb_events()
 
     # 2. Seed PostgreSQL users, orders, tickets, payments, and outbox events
     user_ids = seed_postgresql(mongo_events=mongo_events, num_users=args.users, num_orders=args.orders)

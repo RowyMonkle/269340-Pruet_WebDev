@@ -1,0 +1,77 @@
+/* =====================================================================
+   ENCORE fan dashboard (account/account.html) layout only.
+   Not in the Figma file: built from the same tokens and panels as the booking pages.
+   ===================================================================== */
+
+.acct { display: flex; flex-direction: column; gap: 28px; padding-top: 40px; padding-bottom: 56px; }
+.acct__head { display: flex; align-items: flex-end; justify-content: space-between; gap: 16px; flex-wrap: wrap; }
+.acct__title { font-size: 52px; margin-top: 8px; }
+.panel { background: var(--white); border: 1px solid var(--line); border-radius: var(--radius-lg); padding: 24px; }
+
+.stats { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 16px; }
+.stat { display: flex; flex-direction: column; gap: 12px; }
+.stat span { font-size: 12px; color: var(--muted); }
+.stat strong { font-size: 28px; font-weight: 600; color: var(--plum-700); }
+
+.acct__grid { display: flex; align-items: flex-start; gap: 28px; }
+.orders { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 20px; }
+.orders__head { display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; }
+.orders__head h2, .profile h2 { font-size: 18px; font-weight: 600; }
+.orders__list { display: flex; flex-direction: column; gap: 12px; }
+.orders__empty { padding: 24px 0; font-size: 13px; color: var(--muted); text-align: center; }
+.orders__empty a { color: var(--plum-700); font-weight: 600; }
+.orders__more { align-self: center; }
+
+/* one booking */
+.order { border: 1px solid var(--line); border-radius: var(--radius); overflow: hidden; }
+.order__row { width: 100%; display: grid; grid-template-columns: 1fr auto auto; align-items: center; gap: 16px; padding: 16px; border: 0; background: var(--white); text-align: left; cursor: pointer; }
+.order__row:hover { background: var(--paper); }
+.order__main { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.order__name { font-size: 14px; font-weight: 600; overflow-wrap: anywhere; }
+.order__meta { font-size: 11px; color: var(--muted); }
+.order__amount { font-size: 14px; font-weight: 600; white-space: nowrap; }
+.order__chev { transition: transform .2s; }
+.order[open] .order__chev, .order.is-open .order__chev { transform: rotate(180deg); }
+.order__body { display: flex; flex-direction: column; gap: 12px; padding: 0 16px 16px; }
+.order__actions { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
+.order__hint { font-size: 11px; color: var(--muted); }
+.badge--plum { background: var(--mist); color: var(--plum-700); }
+
+.tickets { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 10px; }
+.ticket { display: flex; flex-direction: column; gap: 4px; padding: 14px; border: 1px dashed var(--plum-700); border-radius: var(--radius); background: var(--mist); }
+.ticket.is-void { border-color: var(--line); background: var(--paper); color: var(--muted); }
+.ticket b { font-size: 13px; }
+.ticket small { font-size: 11px; color: var(--muted); }
+.ticket code { font-size: 12px; font-weight: 700; color: var(--plum-700); letter-spacing: .04em; overflow-wrap: anywhere; }
+.ticket.is-void code { color: var(--muted); text-decoration: line-through; }
+.skel-line { height: 14px; border-radius: var(--radius-sm); background: var(--mist); animation: pulse 1.2s ease-in-out infinite; }
+@keyframes pulse { 50% { opacity: .5; } }
+
+/* profile */
+.side { flex: 0 0 340px; display: flex; flex-direction: column; gap: 16px; position: sticky; top: 108px; }
+.profile { display: flex; flex-direction: column; gap: 16px; }
+.avatar { width: 56px; height: 56px; border-radius: 50%; display: grid; place-items: center; background: var(--plum-700); color: var(--white); font-size: 18px; font-weight: 600; }
+.fld { display: flex; flex-direction: column; gap: 8px; }
+.fld > span:first-child { font-size: 12px; font-weight: 600; }
+.finput { width: 100%; height: 44px; padding: 0 12px; border: 1px solid var(--line); border-radius: var(--radius); background: var(--white); font-size: 13px; outline: 0; }
+.finput:focus { border-color: var(--plum-700); }
+.finput[aria-invalid="true"] { border-color: var(--red-fg); background: var(--red-bg); }
+.fhint { font-size: 11px; color: var(--muted); }
+.pmsg { font-size: 12px; padding: 10px 12px; border-radius: var(--radius); background: var(--green-bg); color: var(--green-fg); }
+.pmsg.is-error { background: var(--red-bg); color: var(--red-fg); }
+.profile .btn:disabled { opacity: .6; cursor: progress; }
+.help { display: flex; gap: 10px; font-size: 12px; color: var(--muted); }
+.help img { flex: none; }
+
+/* ---------- responsive ---------- */
+@media (max-width: 1200px) { .side { flex-basis: 300px; } }
+@media (max-width: 900px) {
+  .stats { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .acct__grid { flex-direction: column; align-items: stretch; }
+  .side { position: static; flex-basis: auto; }
+}
+@media (max-width: 600px) {
+  .acct__title { font-size: 38px; }
+  .order__row { grid-template-columns: 1fr auto; }
+  .order__amount { grid-column: 1; }
+}

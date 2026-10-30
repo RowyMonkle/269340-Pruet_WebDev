@@ -499,6 +499,9 @@ ul {
   color: var(--plum-700);
   white-space: nowrap; /* "Hi, Tanya" added by session.js when a fan is logged in */
 }
+a.nav__hello:hover {
+  text-decoration: underline; /* it links to /account/account.html */
+}
 .footer--slim {
   padding: 24px 0; /* detail pages: only the legal line, as in the Figma concert-details frame */
 }
@@ -526,7 +529,40 @@ ul {
     padding: 0 14px;
     font-size: 12px;
   }
+  .nav__actions {
+    gap: 12px; /* "Hi, name" + Log out must fit a 390px phone */
+  }
+  .nav__admin {
+    display: none; /* Backstage is a desktop tool; admins open /admin/ on a wider screen */
+  }
 }
+
+/* ---------- 12. IMPACT Arena seat plan (arena-map.js; seats page, concert page, admin) ---------- */
+.arena-map {
+  display: block;
+  width: 100%;
+  height: auto;
+  font-family: var(--sans);
+}
+.am-stage { fill: var(--plum-900); }
+.am-stage-t { font-size: 26px; font-weight: 800; text-anchor: middle; fill: var(--mint); letter-spacing: 6px; }
+.am-floor { fill: var(--mist); stroke: var(--line); stroke-width: 2; }
+.am-floor-t { font-size: 12px; font-weight: 700; text-anchor: middle; fill: var(--muted); letter-spacing: 4px; }
+.am-foh { fill: var(--line); }
+.am-foh-t { font-size: 10px; font-weight: 700; text-anchor: middle; fill: var(--muted); }
+.am-level { font-size: 12px; font-weight: 700; fill: var(--muted); letter-spacing: 1px; }
+.am-level--end { text-anchor: end; }
+.am-zone { stroke: var(--white); stroke-width: 2; transition: opacity .15s, filter .15s; }
+.am-zone--none { fill: var(--line); }
+.am-zt { font-size: 20px; font-weight: 700; text-anchor: middle; pointer-events: none; }
+.am-note { font-size: 8px; font-weight: 700; text-anchor: middle; pointer-events: none; }
+.am-z { cursor: pointer; outline: none; }
+.am-z:hover .am-zone, .am-z:focus-visible .am-zone { filter: brightness(1.12); stroke: var(--plum-900); stroke-width: 3; }
+.am-z.is-sel .am-zone { stroke: var(--plum-900); stroke-width: 5; }
+.am-z.is-dim { opacity: .25; }
+.am-z.is-out { cursor: not-allowed; }
+.am-z.is-out .am-zone { fill: var(--line); }
+.am-z.is-out .am-zt { fill: var(--muted); }
 
 /* ---------- 10. responsive tokens ---------- */
 @media (max-width: 1200px) {

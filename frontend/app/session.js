@@ -54,12 +54,29 @@
       location.reload();
     }, { once: true });
     if (!document.querySelector(".nav__hello")) {
-      const hello = document.createElement("span");
+      const hello = document.createElement("a");   // the greeting opens the fan's own dashboard
       hello.className = "nav__hello";
+      hello.href = "/account/account.html";
       hello.textContent = `Hi, ${user.first_name || "there"}`;
       btn.before(hello);
     }
+    if ((user.role === "admin" || user.role === "organizer") && !document.querySelector(".nav__admin")) {
+      const admin = document.createElement("a");   // admins and organizers get a way into Backstage
+      admin.className = "btn btn--outline nav__admin";
+      admin.href = user.role === "admin" ? "/admin/index.html" : "/admin/concerts.html";   // organizers: concerts only
+      admin.textContent = user.role === "admin" ? "Admin" : "Backstage";
+      btn.before(admin);
+    }
   }
-  if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", paintNav);
-  else paintNav();
+
+  // "Your tickets" in every menu and footer -> the dashboard (log in first when needed)
+  function wireTicketLinks() {
+    document.querySelectorAll("a").forEach((a) => {
+      if (a.textContent.trim() !== "Your tickets") return;
+      a.href = Session.get() ? "/account/account.html" : Session.loginHref("/account/account.html");
+    });
+  }
+  const start = () => { paintNav(); wireTicketLinks(); };
+  if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", start);
+  else start();
 })();

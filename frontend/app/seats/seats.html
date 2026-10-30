@@ -81,21 +81,34 @@
           </div>
 
           <!-- venue overview: one button per zone, dearest nearest the stage (built by seats.js) -->
+          <!-- IMPACT Arena seat plan (arena-map.js) when the event uses it; otherwise the block layout below -->
+          <div class="arena-svg" id="arena-svg" hidden></div>
           <div class="arena">
             <div class="arena__stage">STAGE</div>
             <div class="arena__zones" id="arena-zones" role="group" aria-label="Sections"></div>
           </div>
 
+          <!-- the section the fan clicked on the plan: name, price, seats left (filled by seats.js) -->
+          <div class="pick" id="zone-pick" aria-live="polite">
+            <span class="pick__swatch" id="pick-swatch"></span>
+            <span class="pick__info"><b id="pick-name">Choose a section on the plan</b><small id="pick-meta">Click any coloured block to see its price and seats.</small></span>
+            <span class="pick__price" id="pick-price"></span>
+          </div>
           <div class="plan__detail">
             <p class="plan__zone" id="zone-title">Pick a section above to see its seats</p>
             <p class="plan__front">Front of stage ↑</p>
           </div>
 
           <div class="seatgrid" id="seat-grid-wrap">
+            <div class="seatgrid__stage" aria-hidden="true">STAGE THIS WAY</div>
             <div class="seatgrid__scroll">
               <div class="seatgrid__rows" id="seat-grid" role="grid" aria-label="Seats"></div>
             </div>
             <!-- big zones are shown 6 rows at a time -->
+            <div class="seatgrid__bar">
+              <span id="pick-count">Tap a seat to add it. Tap it again to remove it.</span>
+              <button type="button" class="link-x" id="clear-picks" disabled>Clear all picks</button>
+            </div>
             <div class="seatgrid__pager" id="row-pager" hidden>
               <button type="button" class="btn btn--outline btn--sm" id="rows-prev">← Closer rows</button>
               <span id="rows-label"></span>
@@ -104,20 +117,15 @@
           </div>
 
           <ul class="legend" aria-label="Seat legend">
-            <li><i class="seat-swatch"></i>Available</li>
-            <li><i class="seat-swatch seat-swatch--taken"></i>Unavailable</li>
-            <li><i class="seat-swatch seat-swatch--selected"></i>Selected</li>
-            <li><i class="seat-swatch seat-swatch--access"></i>Accessible</li>
+            <li><span class="seat" aria-hidden="true"></span>Available</li>
+            <li><span class="seat" aria-pressed="true" aria-hidden="true"></span>Your pick</li>
+            <li><span class="seat seat--access" aria-hidden="true"></span>Wheelchair space</li>
+            <li><button class="seat" disabled aria-hidden="true" tabindex="-1"></button>Taken</li>
           </ul>
         </section>
 
         <!-- ================= Ticket categories ================= -->
         <div class="cats" id="categories" role="group" aria-label="Ticket categories"></div>
-
-        <p class="access-help">
-          <img src="../assets/accessibility.svg" width="20" height="20" alt="" />
-          <span>Need accessible seating or a companion ticket? Our team can help. <a href="#accessibility">Contact accessibility support ↗</a></span>
-        </p>
       </div>
 
       <!-- ================= Order summary ================= -->
@@ -133,7 +141,9 @@
           <p class="summary__when" id="sum-where"></p>
         </div>
 
+        <p class="summary__zone" id="sum-zone" hidden></p>
         <ul class="summary__seats" id="sum-seats" aria-live="polite"></ul>
+        <button type="button" class="link-x" id="sum-clear" hidden>Remove all tickets</button>
         <p class="summary__empty" id="sum-empty">No seats yet. Pick up to <span id="max-tickets">6</span> seats on the map.</p>
 
         <hr class="summary__rule" />
@@ -155,12 +165,13 @@
     <div class="container">
       <div class="footer__legal">
         <span>© 2026 ENCORE. Made for the live moment.</span>
-        <span class="footer__legal-links"><a href="#privacy">Privacy policy</a><a href="#terms">Terms of use</a><a href="#cookies">Cookies</a></span>
       </div>
     </div>
   </footer>
 
   <script src="../session.js"></script><!-- logged-in user + nav button (shared) -->
+  <script src="../arena-map.js"></script><!-- shared IMPACT Arena seat plan -->
+  <script src="../art.js"></script><!-- artist artwork -->
   <script src="seats.js"></script>
 </body>
 </html>

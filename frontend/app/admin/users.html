@@ -1,0 +1,53 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Users — ENCORE Backstage</title>
+  <meta name="robots" content="noindex" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="../theme.css" />
+  <link rel="stylesheet" href="admin.css" />
+</head>
+<body data-page="users">
+  <main class="content" id="content" hidden aria-busy="true">
+    <div class="page-head">
+      <div>
+        <h1>Users</h1>
+        <p id="sub">Every account, with its bookings.</p>
+      </div>
+      <div class="page-head__actions">
+        <label class="fld"><span class="sr-only">Rows per page</span>
+          <select class="finput" id="size"><option value="20">20 per page</option><option value="50">50 per page</option><option value="100">100 per page</option></select>
+        </label>
+      </div>
+    </div>
+
+    <section class="panel">
+      <div class="panel__head">
+        <div class="chips" role="group" aria-label="Filter by role" id="roles">
+          <button type="button" class="chip is-active" data-r="" aria-pressed="true">All roles</button>
+          <button type="button" class="chip" data-r="fan" aria-pressed="false">Fans</button>
+          <button type="button" class="chip" data-r="organizer" aria-pressed="false">Organizers</button>
+          <button type="button" class="chip" data-r="admin" aria-pressed="false">Admins</button>
+        </div>
+        <label class="toolbar__search"><span class="sr-only">Search this page</span><input type="search" id="q" placeholder="Search name, email, username (this page)" /></label>
+      </div>
+      <div class="table-wrap">
+        <table class="table">
+          <thead><tr><th class="num">ID</th><th>User</th><th>Username</th><th>Role</th><th>Joined</th><th>Updated</th></tr></thead>
+          <tbody id="rows"><tr><td colspan="6" class="note">Loading…</td></tr></tbody>
+        </table>
+      </div>
+      <div class="pager"><span id="count"></span><span><button type="button" class="btn btn--outline" id="prev">← Prev</button> <button type="button" class="btn btn--outline" id="next">Next →</button></span></div>
+      <p class="note">The users API pages by ID and has no search or role filter, so search and role chips work on the page that is loaded.</p>
+    </section>
+  </main>
+
+  <script src="../session.js"></script>
+  <script src="admin-shell.js"></script>
+  <script src="users.js"></script>
+</body>
+</html>

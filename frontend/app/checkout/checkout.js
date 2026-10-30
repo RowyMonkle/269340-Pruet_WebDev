@@ -95,7 +95,7 @@
   function renderSummary() {
     const tickets = order.tickets || [];
     const { main, sub } = splitTitle(event);
-    const d = event?.date_time ? new Date(event.date_time) : null;
+    const d = event?.date_time ? new Date(/[zZ]|[+-]\d\d:\d\d$/.test(event.date_time) ? event.date_time : event.date_time + "Z") : null;   // UTC from the API -> local time
     const ok = d && !Number.isNaN(d.getTime());
     $("#sum-name").textContent = [main, sub].filter(Boolean).join(" · ");
     $("#sum-when").textContent = ok
@@ -103,6 +103,7 @@
       : "";
     $("#sum-where").textContent = [event?.venue?.name, event?.venue?.city].filter(Boolean).join(", ");
     $("#ticket-count").textContent = plural(tickets.length, "ticket");
+    if (event) window.EncoreArt?.apply(document.querySelector(".summary__photo"), event.artist?.name || main);
     $("#order-number").textContent = order.order_number;
     $("#sum-seats").innerHTML = tickets.map((t) => {
       const [row, n] = String(t.seat_number || "").split("-");
@@ -283,15 +284,6 @@
     $("#done").scrollIntoView({ behavior: "smooth", block: "start" });
   }
 
-  // ---------- promo code (no promo API yet) ----------
-  $("#promo-form").addEventListener("submit", (e) => {
-    e.preventDefault();
-    const code = $("#promo").value.trim();
-    const msg = $("#promo-msg");
-    msg.hidden = false;
-    msg.classList.toggle("is-error", Boolean(code));
-    msg.textContent = code ? `“${code}” isn’t a valid code for this concert.` : "Enter a code first.";
-  });
 
   // account hint: hidden when logged in, otherwise log in and come back to this order
   const hint = $(".account-hint");

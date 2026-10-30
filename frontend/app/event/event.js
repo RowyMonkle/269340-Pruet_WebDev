@@ -104,7 +104,7 @@
     const open = zones.filter((z) => seatsLeft(z) > 0);
     const minPrice = (open.length ? open : zones).reduce((m, z) => Math.min(m, z.price), Infinity);
     const avail = availability(e, left);
-    const d = e.date_time ? new Date(e.date_time) : null;
+    const d = e.date_time ? new Date(/[zZ]|[+-]\d\d:\d\d$/.test(e.date_time) ? e.date_time : e.date_time + "Z") : null;   // UTC from the API -> local time
     const ok = d && !Number.isNaN(d.getTime());
     const time = ok ? d.toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" }) : "";
     const attrs = e.dynamic_attributes || {};
@@ -129,8 +129,9 @@
     // about
     $("#about-title").textContent = `A night with ${main}.`;
     $("#about-lead").textContent =
-      `${main} brings ${sub || "a brand-new show"} to ${venue.name || "the stage"}${venue.city ? " in " + venue.city : ""}. ` +
-      (e.artist?.genre ? `Expect a full ${e.artist.genre.toLowerCase()} set, ` : "Expect ") +
+      `${main} brings ${sub ? `“${sub.replace(/\s*·\s*Night \d+$/, "")}”` : "a brand-new show"} to ${venue.name || "the stage"}${venue.city ? " in " + venue.city : ""}. ` +
+      // "K-pop · Boy group" -> "K-pop"
+      (e.artist?.genre ? `Expect a full ${e.artist.genre.split("·")[0].trim()} set, ` : "Expect ") +
       "soaring moments and a crowd singing every word — from the first note to the last encore.";
     const stage = attrs.stage_specs || {};
     const fx = Array.isArray(stage.special_effects) ? stage.special_effects : [];
@@ -148,7 +149,7 @@
     $("#fact-delivery").textContent = attrs.entry_gate ? `Secure mobile tickets · ${attrs.entry_gate}` : "Secure mobile tickets";
 
     // every other dynamic attribute becomes a "good to know" row (Mongo documents differ per event)
-    const shown = new Set(["age_restriction", "entry_gate", "stage_specs"]);
+    const shown = new Set(["age_restriction", "entry_gate", "stage_specs", "demo_data"]);
     const rows = Object.entries(attrs).filter(([k, v]) => !shown.has(k) && v !== null && v !== "");
     const gtk = $("#good-to-know");
     gtk.innerHTML = rows.map(([k, v]) => `<div><dt>${esc(humanKey(k))}</dt><dd>${esc(humanValue(v))}</dd></div>`).join("");
@@ -165,7 +166,15 @@
     // ticket panel
     $("#price-from").textContent = Number.isFinite(minPrice) ? money(minPrice) : "TBA";
     const canBuy = avail.cls === "sale" || avail.cls === "fast";
-    $("#zone-list").innerHTML = zones.map((z, i) => {
+    // big seat plans (IMPACT Arena has ~60 zones): one row per price tier; the seats page picks the zone
+    const tiers = zones.length > 8 ? [...new Set(zones.map((z) => z.price))].map((price) => {
+      const tz = zones.filter((z) => z.price === price);
+      const best = [...tz].sort((a, b) => seatsLeft(b) - seatsLeft(a))[0];
+      const names = tz.map((z) => z.name.replace(" Rear", " rear"));
+      return { name: names.length > 4 ? `${names.slice(0, 4).join(", ")} +${names.length - 4}` : names.join(", "), price, capacity: tz.reduce((n, z) => n + z.capacity, 0), booked_count: tz.reduce((n, z) => n + z.booked_count, 0), best };
+    }) : null;
+    const priceRows = tiers || zones;
+    $("#zone-list").innerHTML = priceRows.map((z, i) => {
       const zl = seatsLeft(z);
       const out = zl === 0 || !canBuy;
       return `<label class="zone${out ? " is-out" : ""}">
@@ -174,8 +183,41 @@
           <span class="zone__price">${money(z.price)}</span>
         </label>`;
     }).join("") || `<p class="muted-12">Zones will be announced soon.</p>`;
+    // seat plan in the venue panel: click a section -> its price shows in the ticket panel
+    const planEl = document.getElementById("venue-plan");
+    const hasPlan = Boolean(planEl && window.EncoreArena?.fits(zones));
+    const drawPlan = (opts = {}) => {
+      if (!hasPlan) return;
+      window.EncoreArena.render(planEl, zones, { locked: !canBuy, selected: selectedZone?.name, onPick: pickFromPlan, ...opts });
+    };
+    function showPrice(label, price, note) {
+      $("#price-label").textContent = label;
+      $("#price-from").textContent = money(price);
+      $("#price-note").textContent = note;
+    }
+    function pickFromPlan(name) {   // section clicked on the plan
+      const z = zones.find((x) => x.name === name);
+      if (!z || !canBuy || seatsLeft(z) === 0) return;
+      selectedZone = z;
+      const row = priceRows.findIndex((r) => r.price === z.price);
+      const radio = $("#zone-list").querySelector(`input[value="${row}"]`);
+      if (radio) radio.checked = true;
+      const level = window.EncoreArena.levelOf(z.name);
+      showPrice(`Section ${z.name}`, z.price, `${level} · ${seatsLeft(z).toLocaleString("en-US")} seats left${(attrs.restricted_view_zones || []).includes(z.name) ? " · restricted view" : ""}. Price per ticket.`);
+      drawPlan();
+      updateCta();
+      if (window.matchMedia("(max-width: 900px)").matches) $(".tickets").scrollIntoView({ behavior: "smooth", block: "start" });
+    }
     $("#zone-list").querySelectorAll("input").forEach((input) =>
-      input.addEventListener("change", () => { selectedZone = zones[Number(input.value)]; updateCta(); }));
+      input.addEventListener("change", () => {   // price row picked: highlight that tier on the plan
+        const r = priceRows[Number(input.value)];
+        selectedZone = r.best || r;
+        showPrice(tiers ? "Selected tier" : `Zone ${r.name}`, r.price, tiers ? `Sections ${r.name}. We’ll start you in ${selectedZone.name}; you can switch on the next page.` : "Price per ticket. Pick your seats on the next page.");
+        drawPlan({ highlightPrice: r.price });
+        updateCta();
+      }));
+    if (hasPlan) { drawPlan(); planEl.hidden = false; }
+    window.EncoreArt?.apply(document.querySelector(".ehero__photo"), e.artist?.name || main, "wide");
 
     const leftEl = $("#seats-left");
     leftEl.className = "tickets__left" + (left === 0 || !canBuy ? " is-out" : left <= SELLING_FAST_SEATS ? " is-low" : "");

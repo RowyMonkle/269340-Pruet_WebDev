@@ -61,12 +61,6 @@
     b.setAttribute("aria-label", show ? "Hide password" : "Show password");
   }));
 
-  // features the API does not have yet (Google OAuth, password reset)
-  document.querySelectorAll("[data-unavailable]").forEach((b) => b.addEventListener("click", () => {
-    const box = $("#form-error");
-    box.textContent = `${b.dataset.unavailable} isn’t available yet. Please use your email and password.`;
-    box.hidden = false;
-  }));
 
   // ======================= LOG IN =======================
   const loginForm = $("#login-form");
