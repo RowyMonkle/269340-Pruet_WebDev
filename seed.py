@@ -129,6 +129,11 @@ ARTISTS = [
 ]
 
 
+# organizers in seed_postgresql are user ids 2..15 (14 accounts): artist i belongs to organizer 2 + i % 14,
+# so every organizer runs at least one act and every show of an act has the same organizer
+ORGANIZER_IDS = list(range(2, 16))
+
+
 def _price(tier: int, factor: float) -> float:
     """Tier price for one act, rounded to 100 THB."""
     return float(round(BASE_TIER_PRICES[tier] * factor / 100) * 100)
@@ -141,7 +146,8 @@ def seed_mongodb_events(num_events: int = 0) -> list:
 
     now = datetime.now(timezone.utc)
     events = []
-    for name, genre, bio, factor, dates, status in ARTISTS:
+    for i, (name, genre, bio, factor, dates, status) in enumerate(ARTISTS):
+        organizer_id = ORGANIZER_IDS[i % len(ORGANIZER_IDS)]
         for night, (y, mo, d, hour) in enumerate(dates, start=1):
             starts = datetime(y, mo, d, hour, 0, tzinfo=BANGKOK_TZ)
             year = starts.year
@@ -168,6 +174,7 @@ def seed_mongodb_events(num_events: int = 0) -> list:
                     "ticket_limit_per_order": 6,
                     "demo_data": True,  # fictional show for the class project
                 },
+                "organizer_id": organizer_id,  # owner (PostgreSQL user id of an organizer account)
                 "status": status,
                 "created_at": now - timedelta(days=random.randint(1, 60)),
                 "updated_at": now,
