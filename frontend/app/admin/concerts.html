@@ -1,0 +1,57 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Concerts &amp; seating — ENCORE Backstage</title>
+  <meta name="robots" content="noindex" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="../theme.css" />
+  <link rel="stylesheet" href="admin.css" />
+</head>
+<body data-page="concerts">
+  <main class="content" id="content" hidden aria-busy="true">
+    <div class="page-head">
+      <div>
+        <h1>Concerts &amp; seating</h1>
+        <p id="sub">Every concert with its zones, capacity and seats booked.</p>
+      </div>
+      <div class="page-head__actions">
+        <button type="button" class="btn btn--outline" id="refresh-btn">Refresh data</button>
+        <button type="button" class="btn btn--primary" id="add-btn">+ Add concert</button>
+      </div>
+    </div>
+
+    <section class="panel">
+      <div class="panel__head">
+        <div class="chips" role="group" aria-label="Filter concerts" id="filters">
+          <button type="button" class="chip is-active" data-f="upcoming" aria-pressed="true">Upcoming</button>
+          <button type="button" class="chip" data-f="all" aria-pressed="false">All</button>
+          <button type="button" class="chip" data-f="low" aria-pressed="false">Almost sold out</button>
+          <button type="button" class="chip" data-f="past" aria-pressed="false">Past</button>
+        </div>
+        <label class="toolbar__search"><span class="sr-only">Search concerts</span><input type="search" id="q" placeholder="Search artist, title, venue, city" /></label>
+      </div>
+      <div class="table-wrap">
+        <table class="table">
+          <thead>
+            <tr>
+              <th>Concert</th><th>Date</th><th>Venue</th><th>Status</th>
+              <th class="num">Zones</th><th class="num">Booked</th><th style="width:160px">Sold</th><th class="num">Booked value</th>
+            </tr>
+          </thead>
+          <tbody id="rows"><tr><td colspan="8" class="note" id="load-note">Loading concerts…</td></tr></tbody>
+        </table>
+      </div>
+      <div class="pager"><span id="count"></span><span><button type="button" class="btn btn--outline" id="prev">← Prev</button> <button type="button" class="btn btn--outline" id="next">Next →</button></span></div>
+    </section>
+  </main>
+
+  <script src="../session.js"></script>
+  <script src="admin-shell.js"></script>
+  <script src="../arena-map.js"></script>
+  <script src="concerts.js"></script>
+</body>
+</html>

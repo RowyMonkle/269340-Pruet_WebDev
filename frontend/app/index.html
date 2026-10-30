@@ -71,8 +71,7 @@
                   alt=""
               /></a>
               <a class="btn btn--ghost" id="hero-artist-btn" href="#artists"
-                >Meet Luna Vale</a
-              >
+                >Meet the artists</a>
             </div>
           </div>
           <div class="hero__meta">
@@ -82,11 +81,9 @@
                 class="hero__teaser-title"
                 id="hero-teaser-title"
                 href="#concerts"
-                >Luna Vale — Afterglow Tour</a
-              >
+                >Concerts in Bangkok</a>
               <span class="hero__teaser-when" id="hero-teaser-when"
-                >14 NOV 2026 · THE O2, LONDON</span
-              >
+                >IMPACT ARENA, BANGKOK</span>
             </div>
             <div class="hero__pager">
               <span id="hero-count">01 / 03</span>
@@ -257,6 +254,7 @@
               >
                 Under ฿2,000
               </button>
+              <button type="button" class="chip" data-chip="saved" aria-pressed="false">Saved</button>
               <button
                 type="button"
                 class="chip"
@@ -276,22 +274,11 @@
           <div class="genres">
             <p class="genres__label">Follow your frequency</p>
             <div class="genres__list" id="genre-list">
-              <button type="button" class="genre" data-genre="Pop">Pop</button>
-              <button type="button" class="genre" data-genre="Indie">
-                Indie &amp; alternative
-              </button>
-              <button type="button" class="genre" data-genre="Electronic">
-                Electronic
-              </button>
-              <button type="button" class="genre" data-genre="R&amp;B">
-                R&amp;B &amp; soul
-              </button>
-              <button type="button" class="genre" data-genre="Rock">
-                Rock
-              </button>
-              <button type="button" class="genre" data-genre="Jazz">
-                Jazz
-              </button>
+              <button type="button" class="genre" data-genre="K-pop">K-pop</button>
+              <button type="button" class="genre" data-genre="T-pop">T-pop</button>
+              <button type="button" class="genre" data-genre="Boy group">Boy groups</button>
+              <button type="button" class="genre" data-genre="Girl group">Girl groups</button>
+              <button type="button" class="genre" data-genre="Rookie">Rookies</button>
             </div>
           </div>
         </div>
@@ -300,23 +287,15 @@
       <!-- ================= Editorial discoveries ================= -->
       <section class="spotlight">
         <div class="container spotlight__inner">
-          <img
-            class="spotlight__photo"
-            src="assets/spotlight.png"
-            alt="Maya Sol singing on stage"
-          />
+          <img class="spotlight__photo" id="spot-photo" src="assets/spotlight.png" alt="" /><!-- app.js swaps in the featured artist -->
           <div class="spotlight__story">
-            <p class="eyebrow eyebrow--gold">ENCORE SPOTLIGHT / MAYA SOL</p>
+            <p class="eyebrow eyebrow--gold" id="spot-eyebrow">ENCORE SPOTLIGHT</p>
             <h2 class="display spotlight__title">
               Some voices stay<br />with you.
             </h2>
-            <p class="spotlight__copy">
-              One stage. A thousand stories. Experience Maya Sol’s Golden Hour
-              Sessions at the Roundhouse — an intimate evening of soul,
-              connection and songs that feel like home.
-            </p>
-            <p class="spotlight__when">28 NOVEMBER · ROUNDHOUSE, LONDON</p>
-            <a class="btn btn--mint" href="#concerts"
+            <p class="spotlight__copy" id="spot-copy">One stage. A thousand stories. Find the night that feels like home.</p>
+            <p class="spotlight__when" id="spot-when">IMPACT ARENA, BANGKOK</p>
+            <a class="btn btn--mint" id="spot-cta" href="#concerts"
               >Discover the show
               <img
                 src="assets/arrow-right-dark.svg"
@@ -337,14 +316,6 @@
                 Get ahead of the crowd. Your next favourite show is coming soon.
               </p>
             </div>
-            <a class="btn btn--outline" href="#concerts"
-              >All upcoming
-              <img
-                src="assets/arrow-right-purple.svg"
-                width="16"
-                height="16"
-                alt=""
-            /></a>
           </div>
           <ul class="upcoming__list" id="upcoming-list"></ul>
         </div>
@@ -359,14 +330,6 @@
                 Follow the names you love and never miss an announcement.
               </p>
             </div>
-            <a class="btn btn--outline" href="#concerts"
-              >Explore artists
-              <img
-                src="assets/arrow-right-purple.svg"
-                width="16"
-                height="16"
-                alt=""
-            /></a>
           </div>
           <ul class="artists__grid" id="artist-grid"></ul>
         </div>
@@ -412,46 +375,6 @@
           </div>
         </div>
       </section>
-
-      <section class="newsletter">
-        <div class="container newsletter__inner">
-          <div class="newsletter__copy">
-            <p class="eyebrow eyebrow--purple">
-              FIRST TO KNOW. FIRST IN THE CROWD.
-            </p>
-            <h2 class="display newsletter__title">Don’t miss your moment.</h2>
-            <p class="newsletter__lead">
-              Fresh announcements, presale access and a little backstage magic.
-            </p>
-          </div>
-          <form class="signup" id="signup-form" novalidate>
-            <div class="signup__controls">
-              <label class="sr-only" for="signup-email">Email address</label>
-              <input
-                type="email"
-                class="input"
-                id="signup-email"
-                placeholder="Your email address"
-                required
-                autocomplete="email"
-              />
-              <button type="submit" class="btn btn--primary">
-                Count me in
-                <img
-                  src="assets/arrow-right-white.svg"
-                  width="16"
-                  height="16"
-                  alt=""
-                />
-              </button>
-            </div>
-            <p class="signup__note" id="signup-note">
-              By subscribing, you agree to our Privacy Policy. Unsubscribe
-              anytime.
-            </p>
-          </form>
-        </div>
-      </section>
     </main>
 
     <footer class="footer" id="tickets">
@@ -474,31 +397,20 @@
           </div>
           <div class="footer__col">
             <h3>Explore</h3>
-            <a href="#concerts">Concerts</a><a href="#artists">Artists</a
-            ><a href="#concerts">Venues</a>
+            <a href="#concerts">Concerts</a><a href="#artists">Artists</a>
           </div>
           <div class="footer__col">
             <h3>Your JUNG PA!</h3>
-            <a href="#tickets">Your tickets</a><a href="#help">Help centre</a
-            ><a href="#accessibility">Accessibility</a>
-          </div>
-          <div class="footer__col">
-            <h3>About us</h3>
-            <a href="#story">Our story</a><a href="#partners">Partner with us</a
-            ><a href="#contact">Contact</a>
+            <a href="#tickets">Your tickets</a><a href="/login/login.html">Log in</a><a href="/register/register.html">Create an account</a>
           </div>
         </div>
         <div class="footer__legal">
           <span>© 2026 JUNG PA!. Made for the live moment.</span>
-          <span class="footer__legal-links"
-            ><a href="#privacy">Privacy policy</a
-            ><a href="#terms">Terms of use</a
-            ><a href="#cookies">Cookies</a></span
-          >
         </div>
       </div>
     </footer>
 
+    <script src="art.js"></script><!-- artist artwork (posters / your own photos) -->
     <script src="session.js"></script><!-- logged-in user + nav button (shared) -->
     <script src="app.js"></script>
   </body>

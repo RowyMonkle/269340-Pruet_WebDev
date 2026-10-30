@@ -13,19 +13,17 @@
   const SELLING_FAST_SEATS = 50;         // seats_left at or below this -> "Selling fast"
   const GRID_SIZE = 4;
   const UPCOMING_SIZE = 3;
-  const ARTIST_SIZE = 5;
-  const CONCERT_PHOTOS = ["assets/concert-1.png", "assets/concert-2.png", "assets/concert-3.png", "assets/concert-4.png"];
-  const ARTIST_PHOTOS = ["assets/artist-1.png", "assets/artist-2.png", "assets/artist-3.png", "assets/artist-4.png", "assets/artist-5.png"];
+  const ARTIST_SIZE = 15;            // every act in the line-up (three rows of five)
+  // artwork per artist comes from art.js (generated poster, or your own photo in assets/artists/)
+  const art = (name, shape) => `data-artist="${esc(name)}" data-shape="${shape}"`;
 
   // Sample data from the Figma frame, used only when the API cannot be reached or has no events.
-  const FALLBACK_EVENTS = [
-    ev("f1", "Luna Vale", "Afterglow Tour", "Indie pop", "The O2", "London", "2026-11-14T19:30", 1450, 32),
-    ev("f2", "The Midnight", "Neon Skyline Live", "Synthwave", "Alexandra Palace", "London", "2026-11-20T20:00", 1350, 400),
-    ev("f3", "Maya Sol", "Golden Hour Sessions", "R&B / Soul", "Roundhouse", "London", "2026-11-28T19:00", 1200, 600),
-    ev("f4", "Atlas & the Waves", "Everything in Motion", "Indie rock", "OVO Arena Wembley", "London", "2026-12-04T19:30", 1750, 900),
-    ev("f5", "Florence Grey", "Wild Hearts Tour", "Alternative", "Royal Albert Hall", "London", "2027-01-08T19:30", 2100, 1000, "coming_soon"),
-    ev("f6", "Solstice", "A Night in Orbit", "Electronic", "The O2", "London", "2027-01-16T20:00", 1550, 1000, "coming_soon"),
-    ev("f7", "Noah Rivers", "Close to Home", "Pop", "Eventim Apollo", "London", "2027-01-29T19:00", 1100, 1000, "coming_soon"),
+  const FALLBACK_EVENTS = [   // shown only when the API cannot be reached (demo artists, fictional dates)
+    ev("f1", "NCT DREAM", "Live in Bangkok 2026", "K-pop · Boy group", "IMPACT Arena", "Bangkok", "2026-12-19T19:00", 1500, 900),
+    ev("f2", "LYKN", "Live in Bangkok 2027", "T-pop · Boy group", "IMPACT Arena", "Bangkok", "2027-01-09T19:00", 1500, 40),
+    ev("f3", "BLACKPINK", "Live in Bangkok 2027", "K-pop · Girl group", "IMPACT Arena", "Bangkok", "2027-01-23T19:00", 2000, 600),
+    ev("f4", "SEVENTEEN", "Live in Bangkok 2027", "K-pop · Boy group", "IMPACT Arena", "Bangkok", "2027-02-06T19:00", 1700, 700),
+    ev("f5", "A2O LITE", "Live in Bangkok 2027", "K-pop · Girl group · Rookie", "IMPACT Arena", "Bangkok", "2027-06-19T19:00", 1100, 1000, "coming_soon"),
   ];
   function ev(id, artist, tour, genre, venue, city, date, price, seats, status = "on_sale") {
     return { id, title: `${artist} — ${tour}`, category: "concert", artist: { name: artist, genre },
@@ -41,7 +39,6 @@
     heroIndex: 0,
     saved: new Set(readStore("encore.saved")),
     followed: new Set(readStore("encore.followed")),
-    reminders: new Set(readStore("encore.reminders")),
   };
 
   // ---------- helpers ----------
@@ -63,7 +60,7 @@
     if (artist && e.title && artist !== e.title) return { main: artist, sub: e.title };
     return { main: e.title || artist || "Untitled concert", sub: e.artist?.genre || "" };
   }
-  const dateOf = (e) => (e.date_time ? new Date(e.date_time) : null);
+  const dateOf = (e) => (e.date_time ? new Date(/[zZ]|[+-]\d\d:\d\d$/.test(e.date_time) ? e.date_time : e.date_time + "Z") : null);   // API times are UTC without a "Z": add it so 12:00Z shows as 19:00 in Bangkok
   const valid = (d) => d && !Number.isNaN(d.getTime());
 
   function fmtCardDate(d) {
@@ -141,6 +138,7 @@
         case "weekend": return isThisWeekend(d);
         case "budget": return e.min_price != null && e.min_price < BUDGET_LIMIT;
         case "fast": return availability(e).cls === "fast";
+        case "saved": return state.saved.has(String(e.id));   // hearts on the cards
         default: return true;
       }
     });
@@ -148,7 +146,7 @@
 
   // ---------- rendering ----------
   function renderHero() {
-    const featured = state.events.filter(isOnSale).slice(0, 3);
+    const featured = onePerArtist(state.events.filter(isOnSale)).slice(0, 3);   // three different acts
     if (!featured.length) return;
     state.heroIndex = (state.heroIndex + featured.length) % featured.length;
     const e = featured[state.heroIndex];
@@ -158,12 +156,14 @@
     $("#hero-teaser-when").textContent = [fmtShortDate(dateOf(e)), [e.venue?.name, e.venue?.city].filter(Boolean).join(", ").toUpperCase()].filter(Boolean).join(" · ");
     $("#hero-count").textContent = `${String(state.heroIndex + 1).padStart(2, "0")} / ${String(featured.length).padStart(2, "0")}`;
     $("#hero-artist-btn").textContent = `Meet ${e.artist?.name || main}`;
+    window.EncoreArt?.apply(document.querySelector(".hero__photo"), e.artist?.name || main, "wide");
   }
 
   const eventHref = (e) => (state.usingFallback ? "#concerts" : `event/event.html?id=${encodeURIComponent(e.id)}`);
 
   function renderGrid() {
-    const list = filtered().slice(0, GRID_SIZE);
+    // default: one card per artist, 4 cards. "View all concerts": every show (both nights), no limit
+    const list = state.showAll ? filtered() : onePerArtist(filtered()).slice(0, GRID_SIZE);
     $("#concert-empty").hidden = list.length > 0;
     $("#concert-grid").innerHTML = list.map((e, i) => {
       const { main, sub } = splitTitle(e);
@@ -172,7 +172,7 @@
       return `
         <article class="card">
           <div class="card__art">
-            <img src="${CONCERT_PHOTOS[i % CONCERT_PHOTOS.length]}" alt="" loading="lazy" />
+            <img ${art(e.artist?.name || main, "wide")} alt="" loading="lazy" />
             <span class="badge badge--${a.cls} card__badge">${a.label}</span>
             <button type="button" class="save" data-save="${esc(e.id)}" aria-pressed="${saved}" aria-label="${saved ? "Remove from saved" : "Save"} ${esc(main)}">
               <img src="assets/heart.svg" width="16" height="16" alt="" />
@@ -190,18 +190,24 @@
           </div>
         </article>`;
     }).join("");
+    window.EncoreArt?.hydrate($("#concert-grid"));
+  }
+
+  // first show of each artist (sorted by date already), so a two-night run is one card
+  function onePerArtist(list) {
+    const seen = new Set();
+    return list.filter((e) => { const k = e.artist?.name || e.id; if (seen.has(k)) return false; seen.add(k); return true; });
   }
 
   function renderUpcoming() {
-    const shown = new Set(filtered().slice(0, GRID_SIZE).map((e) => String(e.id)));
+    const shownArtists = new Set(onePerArtist(filtered()).slice(0, GRID_SIZE).map((e) => e.artist?.name));
     const soon = state.events.filter((e) => !isOnSale(e));
-    const later = state.events.filter((e) => isOnSale(e) && !shown.has(String(e.id)));
+    const later = onePerArtist(state.events.filter((e) => isOnSale(e) && !shownArtists.has(e.artist?.name)));
     const list = [...soon, ...later].slice(0, UPCOMING_SIZE);
     $("#upcoming-list").innerHTML = list.map((e) => {
       const d = dateOf(e);
       const { main, sub } = splitTitle(e);
       const a = availability(e);
-      const on = state.reminders.has(String(e.id));
       return `
         <li class="up">
           <div class="up__date">
@@ -216,29 +222,46 @@
             <span class="badge badge--${a.cls}">${a.label}</span>
             <small>${valid(d) ? `${d.toLocaleDateString("en-GB", { weekday: "long" }).toUpperCase()} · ${d.toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" })}` : ""}</small>
           </div>
-          <button type="button" class="btn btn--outline" data-remind="${esc(e.id)}" aria-pressed="${on}">
-            ${on ? "Reminder set" : "Remind me"} <img src="assets/bell.svg" width="16" height="16" alt="" />
-          </button>
         </li>`;
     }).join("");
   }
 
   function renderArtists() {
-    const seen = new Map();
+    const seen = new Map();   // artist -> [genre, first upcoming show]
     for (const e of state.events) {
       const name = e.artist?.name;
-      if (name && !seen.has(name)) seen.set(name, e.artist?.genre || "Live music");
+      if (name && !seen.has(name)) seen.set(name, [e.artist?.genre || "Live music", e]);
     }
     const artists = [...seen].slice(0, ARTIST_SIZE);
-    $("#artist-grid").innerHTML = artists.map(([name, genre], i) => {
+    $("#artist-grid").innerHTML = artists.map(([name, [genre, show]]) => {
       const on = state.followed.has(name);
+      const d = dateOf(show);
       return `
         <li class="artist">
-          <img src="${ARTIST_PHOTOS[i % ARTIST_PHOTOS.length]}" alt="" loading="lazy" />
-          <p class="artist__name">${esc(name)}</p>
+          <a class="artist__link" href="${eventHref(show)}" aria-label="${esc(name)}: tickets for ${esc(fmtShortDate(d))}">
+            <img ${art(name, "square")} alt="" loading="lazy" />
+            <p class="artist__name">${esc(name)}</p>
+            <p class="artist__when">${esc(fmtShortDate(d))} · Get tickets →</p>
+          </a>
           <p class="artist__meta">${esc(genre)} &nbsp; · &nbsp; <button type="button" class="follow" data-follow="${esc(name)}" aria-pressed="${on}">${on ? "✓ Following" : "+ Follow"}</button></p>
         </li>`;
     }).join("");
+    window.EncoreArt?.hydrate($("#artist-grid"));
+  }
+
+  // spotlight: the on-sale act with the highest top price that is not the current hero
+  function renderSpotlight() {
+    const hero = onePerArtist(state.events.filter(isOnSale))[0]?.artist?.name;
+    const pick = onePerArtist(state.events.filter(isOnSale)).filter((e) => e.artist?.name !== hero)
+      .sort((a, b) => (b.min_price || 0) - (a.min_price || 0))[0];
+    if (!pick) return;
+    const name = pick.artist?.name || splitTitle(pick).main;
+    const d = dateOf(pick);
+    $("#spot-eyebrow").textContent = `ENCORE SPOTLIGHT / ${name.toUpperCase()}`;
+    $("#spot-copy").textContent = `${pick.artist?.bio ? pick.artist.bio + " " : ""}One night at ${pick.venue?.name || "the arena"} — sing every word with the crowd.`;
+    $("#spot-when").textContent = [valid(d) ? d.toLocaleDateString("en-GB", { day: "numeric", month: "long", year: "numeric" }).toUpperCase() : "", [pick.venue?.name, pick.venue?.city].filter(Boolean).join(", ").toUpperCase()].filter(Boolean).join(" · ");
+    $("#spot-cta").href = eventHref(pick);
+    window.EncoreArt?.apply($("#spot-photo"), name, "wide");
   }
 
   function fillSelect(sel, values) {
@@ -255,7 +278,7 @@
       </div>`).join("");
   }
 
-  function renderAll() { renderHero(); renderGrid(); renderUpcoming(); renderArtists(); }
+  function renderAll() { renderHero(); renderGrid(); renderUpcoming(); renderArtists(); renderSpotlight(); }
 
   // ---------- interactions ----------
   function setChip(chip) {
@@ -297,10 +320,15 @@
       if (b) setChip(b.dataset.chip);
     });
     $("#view-all").addEventListener("click", () => {
-      state.query = state.city = state.date = state.genre = "";
-      $("#search-form").reset();
-      document.querySelectorAll("#genre-list .genre").forEach((b) => b.classList.remove("is-active"));
-      setChip("all");
+      state.showAll = !state.showAll;
+      if (state.showAll) {   // clear search + filters so really every concert shows
+        state.query = state.city = state.date = state.genre = "";
+        $("#search-form").reset();
+        document.querySelectorAll("#genre-list .genre").forEach((b) => b.classList.remove("is-active"));
+      }
+      $("#view-all").firstChild.textContent = state.showAll ? "Show fewer " : "View all concerts ";
+      setChip("all");   // re-renders the grid
+      if (!state.showAll) document.getElementById("concerts").scrollIntoView({ behavior: "smooth" });
     });
     $("#genre-list").addEventListener("click", (e) => {
       const b = e.target.closest("[data-genre]");
@@ -317,15 +345,6 @@
         toast(state.saved.has(id) ? "Saved to your list" : "Removed from your list");
         return;
       }
-      const remind = e.target.closest("[data-remind]");
-      if (remind) {
-        const id = remind.dataset.remind;
-        state.reminders.has(id) ? state.reminders.delete(id) : state.reminders.add(id);
-        writeStore("encore.reminders", state.reminders);
-        renderUpcoming();
-        toast(state.reminders.has(id) ? "We’ll remind you before tickets go on sale" : "Reminder removed");
-        return;
-      }
       const follow = e.target.closest("[data-follow]");
       if (follow) {
         const name = follow.dataset.follow;
@@ -337,18 +356,6 @@
       }
     });
 
-    $("#signup-form").addEventListener("submit", (e) => {
-      e.preventDefault();
-      const input = $("#signup-email");
-      const note = $("#signup-note");
-      const ok = input.checkValidity() && input.value.trim() !== "";
-      input.setAttribute("aria-invalid", String(!ok));
-      note.classList.toggle("is-error", !ok);
-      note.textContent = ok
-        ? "You’re on the list. Watch your inbox for the first announcement."
-        : "Please enter a valid email address.";
-      if (ok) e.target.reset();
-    });
   }
 
   // ---------- start ----------

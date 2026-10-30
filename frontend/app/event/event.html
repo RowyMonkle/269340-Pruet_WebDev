@@ -111,6 +111,7 @@
             <img src="../assets/map-pin-purple.svg" width="20" height="20" alt="" />
           </div>
           <p class="venue__text" id="venue-text"></p>
+          <div class="venue__plan" id="venue-plan" hidden aria-label="Seat plan"></div>
           <div class="venue__links">
             <a id="directions" href="#" target="_blank" rel="noopener">↗ Get directions</a>
             <span>♿ Accessible seating available</span>
@@ -138,8 +139,8 @@
       <!-- ================= Ticket panel ================= -->
       <aside class="panel tickets" aria-labelledby="tickets-title">
         <p class="tickets__eyebrow" id="tickets-title">YOUR PLACE IN THE CROWD</p>
-        <p class="tickets__from"><span>From</span> <strong id="price-from">—</strong></p>
-        <p class="tickets__note">Price per ticket. Choose a zone, then pick your seats.</p>
+        <p class="tickets__from"><span id="price-label">From</span> <strong id="price-from">—</strong></p>
+        <p class="tickets__note" id="price-note">Price per ticket. Choose a zone here or on the seat plan, then pick your seats.</p>
         <!-- one radio per zone so the choice is keyboard-accessible; event.js builds them -->
         <fieldset class="zones">
           <legend class="sr-only">Ticket zone</legend>
@@ -159,12 +160,13 @@
     <div class="container">
       <div class="footer__legal">
         <span>© 2026 ENCORE. Made for the live moment.</span>
-        <span class="footer__legal-links"><a href="#privacy">Privacy policy</a><a href="#terms">Terms of use</a><a href="#cookies">Cookies</a></span>
       </div>
     </div>
   </footer>
 
   <script src="../session.js"></script><!-- logged-in user + nav button (shared) -->
+  <script src="../arena-map.js"></script><!-- shared IMPACT Arena seat plan -->
+  <script src="../art.js"></script><!-- artist artwork -->
   <script src="event.js"></script>
 </body>
 </html>

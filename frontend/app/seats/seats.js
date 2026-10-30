@@ -115,7 +115,7 @@
   function init() {
     const e = state.event;
     const { main, sub } = splitTitle(e);
-    const d = e.date_time ? new Date(e.date_time) : null;
+    const d = e.date_time ? new Date(/[zZ]|[+-]\d\d:\d\d$/.test(e.date_time) ? e.date_time : e.date_time + "Z") : null;   // UTC from the API -> local time
     const ok = d && !Number.isNaN(d.getTime());
     const when = ok
       ? `${d.toLocaleDateString("en-GB", { weekday: "short", day: "numeric", month: "short", year: "numeric" })} · ${d.toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" })}`
@@ -130,6 +130,7 @@
     $("#sum-when").textContent = when;
     $("#sum-where").textContent = where;
     $("#max-tickets").textContent = MAX_TICKETS;
+    window.EncoreArt?.apply(document.querySelector(".summary__photo"), e.artist?.name || main);
 
     const onSale = !/coming[_ -]?soon|presale|cancel|complete|past|ended|draft/i.test(e.status || "");
     state.zones = [...(e.zones || [])]
@@ -143,6 +144,11 @@
       if (z && !isTaken(z, p.seat) && state.selected.size < MAX_TICKETS) state.selected.set(seatKey(z, p.seat), { zone: z, seat: p.seat, price: z.price });
     }
 
+    state.arena = Boolean(window.EncoreArena?.fits(state.zones));   // IMPACT Arena plan, else the simple block layout
+    state.locked = !onSale;
+    state.restricted = new Set(e.dynamic_attributes?.restricted_view_zones || []);
+    document.querySelector(".arena").hidden = state.arena;
+    $("#arena-svg").hidden = !state.arena;
     renderZones();
     renderCategories();
     const wanted = state.zones.find((z) => z.name === params.get("zone") && z.left > 0)
@@ -154,6 +160,21 @@
 
   // ---------- venue overview ----------
   function renderZones() {
+    if (state.arena) {
+      window.EncoreArena.render($("#arena-svg"), state.zones, {
+        selected: state.zone?.name,
+        highlightPrice: state.tier,
+        locked: state.locked,
+        onPick: (name) => {
+          const z = state.zones.find((x) => x.name === name);
+          if (!z || z.left <= 0) return;
+          state.tier = null;   // a click on the plan clears the tier filter
+          selectZone(z);
+          $("#zone-pick").scrollIntoView({ behavior: "smooth", block: "nearest" });
+        },
+      });
+      return;
+    }
     // dearest zone in the centre at the stage, next two on the sides, the rest as bands further back
     const z = state.zones;
     const order = [z[1], z[0], z[2], ...z.slice(3)].filter(Boolean);
@@ -175,6 +196,20 @@
   }
 
   function renderCategories() {
+    if (state.arena) {
+      // one card per price tier (the plan has ~60 zones): click to highlight that tier on the map
+      $("#categories").innerHTML = window.EncoreArena.tiers(state.zones).map((t) => {
+        const left = t.zones.reduce((n, z) => n + z.left, 0);
+        const names = t.zones.map((z) => z.name.replace(" Rear", "↑"));
+        const current = state.zone && state.zone.price === t.price;   // tier of the section picked on the plan
+        return `<button type="button" class="cat${current ? " is-current" : ""}" data-tier="${t.price}" aria-pressed="${state.tier === t.price}" ${left === 0 ? "disabled" : ""}>
+          <span class="cat__label"><i style="background:${t.color}"></i>${esc(names.length > 6 ? names.slice(0, 6).join(", ") + " …" : names.join(", "))}</span>
+          <span class="cat__price">${left === 0 ? "Sold out" : money(t.price)}</span>
+          <small class="cat__left">${left === 0 ? "" : `${left.toLocaleString("en-US")} seats left`}</small>
+        </button>`;
+      }).join("");
+      return;
+    }
     $("#categories").innerHTML = state.zones.map((zone, i) => `
       <button type="button" class="cat" data-zone="${i}" aria-pressed="${state.zone === zone}" ${zone.left === 0 ? "disabled" : ""}>
         <span class="cat__label"><i class="tone-${zone.tone}"></i>${esc(zone.name)}</span>
@@ -189,7 +224,22 @@
     renderCategories();
     renderGrid();
     $("#zone-badge").textContent = `${zone.name} selected`;
-    $("#zone-title").textContent = `${zone.name} · ${money(zone.price)} per ticket · ${plural(zone.left, "seat")} left`;
+    // price box under the plan + line in the order summary
+    const tier = state.arena ? window.EncoreArena.tiers(state.zones).find((t) => t.price === zone.price) : null;
+    const level = state.arena ? window.EncoreArena.levelOf(zone.name) : "";
+    $("#zone-pick").classList.add("is-set");
+    $("#pick-swatch").style.background = tier ? tier.color : "var(--plum-700)";
+    $("#pick-name").textContent = `Section ${zone.name}${level ? ` · ${level}` : ""}`;
+    $("#pick-meta").textContent = `${plural(zone.left, "seat")} left`
+      + (state.restricted?.has(zone.name) ? " · Restricted view" : "")
+      + " · pick your seats below";
+    $("#pick-price").innerHTML = `${money(zone.price)} <small>/ ticket</small>`;
+    if (state.arena) $("#zone-title").textContent = `Seats in section ${zone.name}`;   // price is in the box above
+    $("#sum-zone").hidden = false;
+    $("#sum-zone").textContent = `Selected section: ${zone.name} · ${money(zone.price)} per ticket`;
+    $("#zone-title").textContent = `${zone.name} · ${money(zone.price)} per ticket · ${plural(zone.left, "seat")} left`
+      + (state.restricted?.has(zone.name) ? " · Restricted view" : "")
+      + (/ Rear$/.test(zone.name) ? " · Rear rows of level 3" : "");
   }
 
   // ---------- seat grid ----------
@@ -212,12 +262,17 @@
         const access = r === last - 1 && n > inRow - 2;
         cells += `<button type="button" role="gridcell" class="seat${access ? " seat--access" : ""}" data-seat="${seat}"
             aria-pressed="${picked}" ${taken ? "disabled" : ""}
-            aria-label="Row ${name} seat ${n}${access ? ", accessible" : ""}${taken ? ", unavailable" : ""}">${n}</button>`;
+            title="Row ${name} · Seat ${n}${taken ? " · taken" : ` · ${money(zone.price)}`}${access ? " · wheelchair space" : ""}"
+            aria-label="Row ${name} seat ${n}${access ? ", wheelchair space" : ""}${taken ? ", taken" : picked ? ", selected" : ""}">${picked ? "✓" : n}</button>`;
+        if (n === Math.ceil(inRow / 2) && inRow > 8) cells += `<span class="seatrow__aisle" aria-hidden="true"></span>`;   // aisle in the middle
       }
       rows.push(`<div class="seatrow" role="row"><span class="seatrow__label">${name}</span>${cells}<span class="seatrow__label">${name}</span></div>`);
     }
     const grid = $("#seat-grid");
     grid.innerHTML = rows.join("");
+    // seat outline in the colour of the zone's price tier (same colours as the plan)
+    const tier = state.arena ? window.EncoreArena.tiers(state.zones).find((t) => t.price === zone.price) : null;
+    grid.style.setProperty("--tier", tier ? tier.color : "var(--plum-700)");
     grid.style.transform = `scale(${ZOOM_STEPS[state.zoom]})`;
     grid.style.marginBottom = `${(ZOOM_STEPS[state.zoom] - 1) * grid.offsetHeight}px`;   // scale() does not move the content below
 
@@ -263,6 +318,11 @@
         </li>`;
     }).join("");
     $("#sum-empty").hidden = picks.length > 0;
+    $("#sum-clear").hidden = picks.length === 0;
+    $("#clear-picks").disabled = picks.length === 0;
+    $("#pick-count").innerHTML = picks.length
+      ? `<b>${picks.length} of ${MAX_TICKETS}</b> seats picked · tap a picked seat (✓) to remove it`
+      : "Tap a seat to add it. Tap it again to remove it.";
     // label "Tickets (2 × ฿85.00)" when every seat costs the same, else just "Tickets (3)"
     const same = picks.length && picks.every((p) => p.price === picks[0].price);
     $("#sum-tickets-label").textContent = picks.length
@@ -364,6 +424,14 @@
     if (b && !b.disabled) selectZone(state.zones[Number(b.dataset.zone)]);
   });
   $("#categories").addEventListener("click", (ev) => {
+    const t = ev.target.closest("[data-tier]");
+    if (t && !t.disabled) {   // tier card: toggle the highlight, jump to the tier's emptiest zone
+      const price = Number(t.dataset.tier);
+      state.tier = state.tier === price ? null : price;
+      const best = state.tier == null ? null : state.zones.filter((z) => z.price === price && z.left > 0).sort((a, b) => b.left - a.left)[0];
+      if (best) selectZone(best); else { renderZones(); renderCategories(); }
+      return;
+    }
     const b = ev.target.closest("[data-zone]");
     if (b && !b.disabled) selectZone(state.zones[Number(b.dataset.zone)]);
   });
@@ -371,6 +439,9 @@
     const b = ev.target.closest("[data-seat]");
     if (b && !b.disabled) toggleSeat(b.dataset.seat);
   });
+  const clearAll = () => { state.selected.clear(); selectionChanged(); toast("All picks removed"); };
+  $("#clear-picks").addEventListener("click", clearAll);
+  $("#sum-clear").addEventListener("click", clearAll);
   $("#sum-seats").addEventListener("click", (ev) => {
     const b = ev.target.closest("[data-remove]");
     if (b) { state.selected.delete(b.dataset.remove); selectionChanged(); }

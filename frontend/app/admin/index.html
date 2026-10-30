@@ -1,0 +1,71 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Overview — ENCORE Backstage</title>
+  <meta name="robots" content="noindex" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="../theme.css" />
+  <link rel="stylesheet" href="admin.css" />
+</head>
+<body data-page="overview">
+  <!-- admin-shell.js wraps this in the sidebar + toolbar (or replaces the page with a log-in gate) -->
+  <main class="content" id="content" hidden aria-busy="true">
+    <div class="page-head">
+      <div>
+        <h1 id="greeting">Good morning.</h1>
+        <p>Here’s what’s happening across your live music world.</p>
+      </div>
+      <div class="page-head__actions">
+        <button type="button" class="btn btn--outline" id="refresh-btn">Refresh data</button>
+        <button type="button" class="btn btn--primary" id="export-btn" disabled>Export report</button>
+      </div>
+    </div>
+
+    <div class="metrics">
+      <div class="panel metric"><div class="metric__top">Booked ticket value</div><strong id="m-value"><span class="skel"></span></strong><small id="m-value-sub">&nbsp;</small></div>
+      <div class="panel metric"><div class="metric__top">Seats booked</div><strong id="m-booked"><span class="skel"></span></strong><small id="m-booked-sub">&nbsp;</small></div>
+      <div class="panel metric"><div class="metric__top">Registered fans</div><strong id="m-fans"><span class="skel"></span></strong><small id="m-fans-sub">&nbsp;</small></div>
+      <div class="panel metric"><div class="metric__top">Live concerts</div><strong id="m-live"><span class="skel"></span></strong><small id="m-live-sub">&nbsp;</small></div>
+    </div>
+
+    <div class="row">
+      <section class="panel grow" aria-labelledby="chart-title">
+        <div class="panel__head">
+          <div><h2 id="chart-title">Booked value by concert month</h2><p>Seats held or paid × zone price, grouped by the month the concert takes place · THB</p></div>
+          <span class="badge badge--plum">Next 12 months</span>
+        </div>
+        <div id="chart"><p class="note" id="load-note">Loading concerts…</p></div>
+      </section>
+      <section class="panel side" aria-labelledby="top-title">
+        <div class="panel__head"><h2 id="top-title">Top-selling concerts</h2><a class="panel__link" href="concerts.html">All →</a></div>
+        <ul id="top-list" class="stack"></ul>
+      </section>
+    </div>
+
+    <div class="row">
+      <section class="panel grow" aria-labelledby="fans-title">
+        <div class="panel__head"><h2 id="fans-title">Newest fans</h2><a class="panel__link" href="users.html">View all users →</a></div>
+        <div class="table-wrap">
+          <table class="table">
+            <thead><tr><th>Fan</th><th>Username</th><th>Role</th><th>Joined</th></tr></thead>
+            <tbody id="fans-body"><tr><td colspan="4" class="note">Loading…</td></tr></tbody>
+          </table>
+        </div>
+        <p class="note">Recent orders need an “all orders” API in the backend, so new sign-ups are shown here instead.</p>
+      </section>
+      <section class="panel side" aria-labelledby="att-title">
+        <div class="panel__head"><h2 id="att-title">Needs your attention</h2></div>
+        <ul class="alert-list" id="attention"><li class="note">Loading…</li></ul>
+      </section>
+    </div>
+  </main>
+
+  <script src="../session.js"></script>
+  <script src="admin-shell.js"></script>
+  <script src="overview.js"></script>
+</body>
+</html>

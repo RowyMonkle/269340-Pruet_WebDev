@@ -1,0 +1,100 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Your tickets — ENCORE</title>
+  <meta name="description" content="Your bookings, tickets and account details." />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Bodoni+Moda:opsz,wght@6..96,400;6..96,500&family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="../theme.css" />
+  <link rel="stylesheet" href="account.css" />
+</head>
+<body>
+  <header class="nav">
+    <div class="container nav__inner">
+      <a class="brand" href="../" aria-label="Home">
+        <img src="../assets/audio-lines.svg" width="26" height="26" alt="" />
+        <span class="brand__name">JUNG PA!</span>
+      </a>
+      <nav class="nav__links" aria-label="Main">
+        <a href="../#discover">Discover</a>
+        <a href="../#concerts">Concerts</a>
+        <a href="../#artists">Artists</a>
+        <a href="account.html" class="is-active">Your tickets</a>
+      </nav>
+      <div class="nav__actions">
+        <span class="nav__location"><img src="../assets/map-pin.svg" width="17" height="17" alt="" />Bangkok, TH</span>
+        <a class="btn btn--outline" href="#login">Log in / Sign up</a>
+      </div>
+    </div>
+  </header>
+
+  <main class="container acct" id="acct" aria-busy="true">
+    <div class="acct__head">
+      <div>
+        <p class="eyebrow eyebrow--purple">YOUR ENCORE</p>
+        <h1 class="display acct__title" id="hello">Your tickets</h1>
+        <p class="muted-14" id="hello-sub">Every booking, every ticket code, in one place.</p>
+      </div>
+      <a class="btn btn--primary" href="../#concerts">Find another night <img src="../assets/arrow-right-white.svg" width="16" height="16" alt="" /></a>
+    </div>
+
+    <!-- stats from the loaded orders -->
+    <div class="stats" id="stats">
+      <div class="panel stat"><span>Upcoming tickets</span><strong id="st-tickets">—</strong></div>
+      <div class="panel stat"><span>Paid bookings</span><strong id="st-paid">—</strong></div>
+      <div class="panel stat"><span>Waiting for payment</span><strong id="st-pending">—</strong></div>
+      <div class="panel stat"><span>Total spent</span><strong id="st-spent">—</strong></div>
+    </div>
+
+    <div class="acct__grid">
+      <!-- ================= Bookings ================= -->
+      <section class="panel orders" aria-labelledby="orders-title">
+        <div class="orders__head">
+          <h2 id="orders-title">Your bookings</h2>
+          <div class="chips" role="group" aria-label="Filter bookings" id="filters">
+            <button type="button" class="chip is-active" data-filter="all" aria-pressed="true">All</button>
+            <button type="button" class="chip" data-filter="confirmed" aria-pressed="false">Paid</button>
+            <button type="button" class="chip" data-filter="pending" aria-pressed="false">Waiting</button>
+            <button type="button" class="chip" data-filter="past" aria-pressed="false">Expired / cancelled</button>
+          </div>
+        </div>
+        <ul class="orders__list" id="order-list" aria-live="polite"></ul>
+        <p class="orders__empty" id="order-empty" hidden></p>
+        <button type="button" class="btn btn--outline orders__more" id="more-btn" hidden>Show older bookings</button>
+      </section>
+
+      <!-- ================= Profile ================= -->
+      <aside class="side">
+        <form class="panel profile" id="profile-form" novalidate>
+          <h2>Your details</h2>
+          <div class="avatar" id="avatar" aria-hidden="true">?</div>
+          <label class="fld"><span>First name</span><input class="finput" id="p-first" autocomplete="given-name" maxlength="100" required /></label>
+          <label class="fld"><span>Last name</span><input class="finput" id="p-last" autocomplete="family-name" maxlength="100" /></label>
+          <label class="fld"><span>Email address</span><input class="finput" id="p-email" type="email" autocomplete="email" required /></label>
+          <p class="fhint" id="p-meta"></p>
+          <p class="pmsg" id="p-msg" role="status" hidden></p>
+          <button type="submit" class="btn btn--primary" id="p-save">Save changes</button>
+        </form>
+        <div class="panel help">
+          <img src="../assets/shield-check.svg" width="20" height="20" alt="" />
+          <p>Show the ticket code at the gate. Seats on unpaid bookings are released 10 minutes after you choose them.</p>
+        </div>
+      </aside>
+    </div>
+  </main>
+
+  <footer class="footer footer--slim">
+    <div class="container">
+      <div class="footer__legal">
+        <span>© 2026 ENCORE. Made for the live moment.</span>
+      </div>
+    </div>
+  </footer>
+
+  <script src="../session.js"></script>
+  <script src="account.js"></script>
+</body>
+</html>

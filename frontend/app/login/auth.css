@@ -31,8 +31,6 @@
 .auth__sub { font-size: 14px; color: var(--muted); }
 .auth__wide { width: 100%; }
 .auth__wide:disabled { opacity: .6; cursor: progress; }
-.auth__or { display: flex; align-items: center; gap: 16px; font-size: 11px; color: var(--muted); }
-.auth__or::before, .auth__or::after { content: ""; flex: 1; border-top: 1px solid var(--line); }
 .auth__row { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
 .auth__link { padding: 0; border: 0; background: none; color: var(--plum-700); font-size: 12px; font-weight: 600; cursor: pointer; }
 .auth__link:hover { text-decoration: underline; }
